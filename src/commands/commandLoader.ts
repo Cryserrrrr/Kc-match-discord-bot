@@ -21,6 +21,7 @@ export async function loadCommands(client: Client) {
   // Load command files
   const commandFiles = readdirSync(commandsPath)
     .filter((file) => file.endsWith(".js") || file.endsWith(".ts"))
+    .filter((file) => !file.endsWith(".d.ts")) // Exclude TypeScript declaration files
     .filter(
       (file) => file !== "commandLoader.js" && file !== "commandLoader.ts"
     );
