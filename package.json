@@ -1,0 +1,37 @@
+{
+  "name": "karmine-corp-bot",
+  "version": "1.0.0",
+  "description": "Discord bot for Karmine Corp match notifications",
+  "main": "dist/index.js",
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "dev": "ts-node src/index.ts",
+    "deploy-commands": "ts-node scripts/deploy-commands.js",
+    "check-matches": "ts-node src/scripts/check-matches.ts",
+    "get-matches": "ts-node src/scripts/get-matches.ts",
+    "check-upcoming": "ts-node src/scripts/check-upcoming-matches.ts"
+  },
+  "keywords": [
+    "discord",
+    "bot",
+    "karmine",
+    "esports"
+  ],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "@prisma/client": "^6.7.0",
+    "@types/express": "^5.0.3",
+    "axios": "^1.6.2",
+    "discord.js": "^14.14.1",
+    "dotenv": "^16.3.1",
+    "express": "^5.1.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.10.4",
+    "prisma": "^6.7.0",
+    "ts-node": "^10.9.1",
+    "typescript": "^5.3.3"
+  }
+}

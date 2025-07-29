@@ -1,0 +1,37 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Match {
+  id              String   @id // PandaScore ID
+  kcTeam          String   // KC team name (KC, KCB, KCBS, etc.)
+  kcId            String   // KC team ID
+  opponent        String   // Opponent team name
+  opponentImage   String?  // Opponent team image URL
+  leagueName      String   // League name
+  leagueImage     String?  // League image URL
+  serieName       String   // Serie name
+  tournamentName  String   // Tournament name
+  numberOfGames   Int      // Number of games in the match
+  beginAt         DateTime // Match date/time
+  announced       Boolean  @default(false) // Whether match has been announced
+  createdAt       DateTime @default(now())
+
+  @@map("matches")
+}
+
+model GuildSettings {
+  guildId       String @id
+  channelId     String // Discord channel ID
+  customMessage String // Custom message with placeholders {team}, {hour}, {game}
+
+  @@map("guild_settings")
+} 
