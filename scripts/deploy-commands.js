@@ -58,6 +58,31 @@ const commands = [
     ],
     default_member_permissions: "32", // Manage Server permission
   },
+  {
+    name: "filterteams",
+    description:
+      "Choisir quelles équipes de Karmine Corp doivent être annoncées",
+    type: 1, // CHAT_INPUT
+    options: [
+      {
+        name: "teams",
+        description:
+          "Sélectionner les équipes à annoncer (vide = toutes les équipes)",
+        type: 3, // String type
+        required: false,
+        choices: [
+          { name: "KC (LEC)", value: "134078" },
+          { name: "KCB (LFL)", value: "128268" },
+          { name: "KCBS (LFL2)", value: "136080" },
+          { name: "KC Valorant", value: "130922" },
+          { name: "KCGC Valorant", value: "132777" },
+          { name: "KCBS Valorant", value: "136165" },
+          { name: "KC Rocket League", value: "129570" },
+        ],
+      },
+    ],
+    default_member_permissions: "32", // Manage Server permission
+  },
 ];
 
 const rest = new REST({ version: "10" }).setToken(process.env.DISCORD_TOKEN);

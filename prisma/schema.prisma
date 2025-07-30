@@ -32,6 +32,7 @@ model GuildSettings {
   guildId       String @id
   channelId     String // Discord channel ID
   customMessage String // Custom message with placeholders {team}, {hour}, {game}
+  filteredTeams String[] @default([]) // Array of team IDs to filter matches
 
   @@map("guild_settings")
 } 

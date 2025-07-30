@@ -100,6 +100,19 @@ async function checkUpcomingMatches() {
               continue;
             }
 
+            // Check if this match should be announced based on team filter
+            if (
+              (setting as any).filteredTeams &&
+              (setting as any).filteredTeams.length > 0
+            ) {
+              if (!(setting as any).filteredTeams.includes(match.kcId)) {
+                logger.info(
+                  `Skipping match ${match.id} for guild ${setting.guildId} - team ${match.kcId} not in filter`
+                );
+                return;
+              }
+            }
+
             // Replace placeholders in custom message if it exists
             let message = `🚨 **Match de dernière minute !** 🚨\n${setting.customMessage}`;
 
