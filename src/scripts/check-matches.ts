@@ -40,6 +40,8 @@ async function main() {
 
     if (matches.length === 0) {
       console.log("📭 No matches found for the next 24 hours in database");
+      // Send "no matches" message to all configured channels
+      await announceNoMatches(client, prisma);
     } else {
       console.log(
         `📅 Found ${matches.length} matches for the next 24 hours in database`
@@ -66,10 +68,6 @@ async function getMatchesNext24Hours(prisma: PrismaClient) {
   const now = new Date();
   const tomorrow = new Date(now);
   tomorrow.setDate(tomorrow.getDate() + 1);
-
-  console.log(
-    `🔍 Searching for matches between ${now.toISOString()} and ${tomorrow.toISOString()}`
-  );
 
   const matches = await prisma.match.findMany({
     where: {
@@ -98,6 +96,39 @@ async function getMatchesNext24Hours(prisma: PrismaClient) {
   return matches;
 }
 
+async function announceNoMatches(client: Client, prisma: PrismaClient) {
+  try {
+    const guildSettings = await prisma.guildSettings.findMany();
+
+    if (guildSettings.length === 0) {
+      console.log(
+        "⚠️  No guild settings found - no channels configured for announcements"
+      );
+      return;
+    }
+
+    for (const settings of guildSettings) {
+      try {
+        const guild = await client.guilds.fetch(settings.guildId);
+        const channel = await guild.channels.fetch(settings.channelId);
+
+        if (channel instanceof TextChannel) {
+          await channel.send("🔔 Pas de match aujourd'hui");
+          console.log(`✅ Sent "no matches" message in guild ${guild.name}`);
+        }
+      } catch (error) {
+        console.error(
+          `❌ Failed to send "no matches" message in guild ${settings.guildId}:`,
+          error
+        );
+      }
+    }
+  } catch (error) {
+    console.error("❌ Error sending no matches message:", error);
+    throw error;
+  }
+}
+
 async function announceAllMatches(
   client: Client,
   prisma: PrismaClient,
@@ -112,24 +143,14 @@ async function announceAllMatches(
       );
       return;
     }
-
-    console.log(
-      `📢 Announcing ${matches.length} matches to ${guildSettings.length} guild(s)`
-    );
-
     for (const settings of guildSettings) {
       try {
         const guild = await client.guilds.fetch(settings.guildId);
         const channel = await guild.channels.fetch(settings.channelId);
 
         if (channel instanceof TextChannel) {
-          console.log(`📢 Announcing in guild: ${guild.name} (${guild.id})`);
-          console.log(`📢 Channel: ${channel.name} (${channel.id})`);
-          console.log(`📢 Custom message: "${settings.customMessage}"`);
-
           // Send the custom message first
           await channel.send(settings.customMessage);
-          console.log(`✅ Sent custom message: "${settings.customMessage}"`);
 
           // Send each match as an embed
           for (const match of matches) {
@@ -147,9 +168,6 @@ async function announceAllMatches(
             });
 
             await channel.send({ embeds: [embed] });
-            console.log(
-              `✅ Sent embed for: ${match.kcTeam} vs ${match.opponent}`
-            );
 
             // Small delay between messages to avoid rate limiting
             await new Promise((resolve) => setTimeout(resolve, 1000));
