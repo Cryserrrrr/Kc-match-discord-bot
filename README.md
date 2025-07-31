@@ -1,38 +1,33 @@
 # Karmine Corp Discord Bot
 
-A Discord bot that notifies about Karmine Corp matches in League of Legends, Valorant, and Rocket League using the PandaScore API.
+A Discord bot that automatically notifies about Karmine Corp matches in League of Legends, Valorant and Rocket League using the PandaScore API.
 
-## Features
+## 🚀 Features
 
-- 🔔 **External match checking** - Check for new matches via command line or external triggers
-- 🧠 **Anti-spam mechanism** - Uses PostgreSQL database to prevent duplicate announcements
-- 🎮 **Multi-game support** - League of Legends, Valorant, and Rocket League
-- ⚙️ **Customizable messages** - Personalize announcement messages with placeholders
-- 📊 **Slash commands** - Easy-to-use Discord slash commands
+- 🔔 **Automatic notifications** - Automatic announcements of daily matches
+- ⏰ **Pre-match notifications** - Alerts 30 minutes before each match
+- 🎮 **Multi-game support** - League of Legends, Valorant and Rocket League
+- ⚙️ **Complete configuration** - Integrated configuration interface
+- 🏆 **Team filtering** - Choose which teams to announce
+- 💬 **Customizable messages** - Customize announcement messages
+- 🔄 **Robust retry system** - Works even with network issues
+- 📊 **Slash commands** - Modern and intuitive Discord interface
 
-## Commands
+## 📋 Commands
 
-- `/ping` - Check if the bot is working
+### Discord Commands
+
 - `/nextmatch` - Show the next Karmine Corp match
-- `/setchannel <channel>` - Set the announcement channel (requires Manage Server permission)
-- `/setphrase <message>` - Customize the announcement message (requires Manage Server permission)
+- `/config` - Complete bot configuration (server management permissions required)
+- `/setphrase <message>` - Customize the announcement message (server management permissions required)
 
-### External Commands
+### Maintenance Scripts
 
-- `npm run check-matches` - Trigger match checking from command line (external only)
-- `node scripts/check-matches.js` - Direct script execution
+- `npm run get-matches` - Fetch new matches from PandaScore
+- `npm run check-matches` - Check and announce matches for the next 24h
+- `npm run check-upcoming-matches` - Check matches in the next 30-35 minutes
 
-### Message Placeholders
-
-When customizing the announcement message, you can use these placeholders:
-
-- `{team}` - Opponent team name
-- `{hour}` - Match time (HH:MM format)
-- `{game}` - Game name
-
-Example: `🔥 La KC affronte {team} à {hour} sur {game} !`
-
-## Setup
+## ⚙️ Setup
 
 ### Prerequisites
 
@@ -47,7 +42,7 @@ Example: `🔥 La KC affronte {team} à {hour} sur {game} !`
 
    ```bash
    git clone <repository-url>
-   cd karmine-corp-bot
+   cd Kc-match-discord-bot
    ```
 
 2. **Install dependencies**
@@ -56,26 +51,18 @@ Example: `🔥 La KC affronte {team} à {hour} sur {game} !`
    npm install
    ```
 
-3. **Set up environment variables**
+3. **Configure environment variables**
 
    ```bash
    cp env.example .env
    ```
 
-   Edit `.env` with your credentials:
-
-   ```env
-   DISCORD_TOKEN=your_discord_bot_token
-   PANDASCORE_TOKEN=your_pandascore_token
-   DATABASE_URL="postgresql://username:password@localhost:5432/karmine_bot"
-   CLIENT_ID=your_discord_client_id
-   ```
+   Edit `.env` with your credentials
 
 4. **Set up the database**
 
    ```bash
-   npx prisma generate
-   npx prisma db push
+   npx prisma migrate dev --name init
    ```
 
 5. **Build the project**
@@ -101,6 +88,7 @@ Example: `🔥 La KC affronte {team} à {hour} sur {game} !`
    - Send Messages
    - Use Slash Commands
    - Embed Links
+   - Manage Server (for configuration)
 8. Use the generated URL to invite the bot to your server
 
 ### PandaScore API Setup
@@ -109,190 +97,108 @@ Example: `🔥 La KC affronte {team} à {hour} sur {game} !`
 2. Create an account and get your API token
 3. Add the token to your `.env` file
 
-## Usage
+## 🎯 Usage
 
-### External Match Checking
-
-The bot supports external match checking via command line:
+### Discord Configuration
 
 1. **Set up the announcement channel:**
 
    ```
-   /setchannel #announcements
+   /config
    ```
+
+   Then select "📺 Announcement Channel"
 
 2. **Customize the message (optional):**
 
    ```
-   /setphrase 🔥 La KC affronte {team} à {hour} sur {game} !
+   /config
    ```
 
-3. **Check for new matches via command line:**
+   Then select "💬 Custom Message"
 
-   ```bash
-   npm run check-matches
+3. **Filter teams (optional):**
+
+   ```
+   /config
    ```
 
-   Or directly:
+   Then select "🏆 Team Filter"
 
-   ```bash
-   node scripts/check-matches.js
+4. **Enable pre-match notifications (optional):**
+
+   ```
+   /config
    ```
 
-The script will:
+   Then select "🔔 Pre-match Notifications"
 
-- Connect to Discord and the database
-- Fetch matches from PandaScore API
-- Check for new matches
-- Send announcements to configured channels
-- Exit cleanly
+### Supported Teams
 
-### Integration with External Systems
+- **KC (LEC)** - Main League of Legends team
+- **KCB (LFL)** - Academy League of Legends team
+- **KCBS (LFL2)** - LFL2 League of Legends team
+- **KC Valorant** - Main Valorant team
+- **KCGC Valorant** - Game Changers Valorant team
+- **KCBS Valorant** - Academy Valorant team
+- **KC Rocket League** - Rocket League team
 
-You can integrate the match checking with:
+### Predefined Messages
 
-#### Option 1: Integrated Service (Recommended)
+- `@everyone Match(s) of the day!`
+- `@everyone Today Match(s)!`
+- `🏆 KC Match(s) of the day!`
+- `⚡ Today KC Match(s)!`
 
-The notification service is now integrated with the bot and starts automatically:
+## 🔄 Retry System
 
-```bash
-npm start
-# or
-npm run dev
-```
+The bot includes a robust retry system with exponential backoff:
 
-This automatically:
+- **5 maximum attempts** by default
+- **Progressive delays**: 2s → 4s → 8s → 16s → 32s → 60s max
+- **Detailed logs** to diagnose issues
+- **Maximum resilience** against network timeouts
 
-- Starts the Discord bot
-- Starts the notification service
-- Checks for upcoming matches every hour
-- Schedules notifications exactly 30 minutes before each match
-- Manages timers automatically
-- Stays running until stopped
-
-#### Option 2: Standalone Service
-
-Run the notification service separately:
-
-```bash
-npm run notification-service
-```
-
-This service:
-
-- Checks for upcoming matches every hour
-- Schedules notifications exactly 30 minutes before each match
-- Manages timers automatically
-- Stays running until stopped
-
-#### Option 2: Cron Jobs (Legacy)
-
-- **Cron jobs** (Linux/macOS):
-
-  ```bash
-  0 * * * * cd /path/to/bot && npm run check-upcoming
-  ```
-
-- **Task Scheduler** (Windows):
-
-  ```cmd
-  npm run check-upcoming
-  ```
-
-- **Coolify Cron Jobs**:
-  ```bash
-  npm run check-upcoming
-  ```
-
-## Deployment
-
-### Coolify Deployment (Recommended)
-
-1. **Push your code to a Git repository**
-
-2. **In Coolify dashboard:**
-
-   - Create a new application
-   - Connect your Git repository
-   - Set build method to "Dockerfile"
-   - Add environment variables:
-     ```
-     DISCORD_TOKEN=your_discord_bot_token
-     PANDASCORE_TOKEN=your_pandascore_token
-     DATABASE_URL=your_postgresql_connection_string
-     CLIENT_ID=your_discord_client_id
-     NODE_ENV=production
-     ```
-
-3. **Set up Cron Job in Coolify:**
-
-   - Create a new cron job
-   - Command: `npm run check-matches`
-   - Schedule: `*/30 * * * *` (every 30 minutes)
-   - Working directory: `/app`
-
-4. **Deploy the application**
-
-The bot will:
-
-- Build using the provided Dockerfile
-- Start and wait for external triggers
-- Run match checks via cron job every 30 minutes
-- Restart automatically if it crashes
-- Provide health checks
+## 🚀 Deployment
 
 ### Manual Deployment (VPS)
 
 1. **Upload files to your VPS**
 2. **Install Node.js and PostgreSQL**
-3. **Set up environment variables**
+3. **Configure environment variables**
 4. **Install dependencies**: `npm install --production`
-5. **Set up the database**: `npx prisma db push`
+5. **Set up the database**: `npx prisma migrate dev --name init`
 6. **Build the project**: `npm run build`
 7. **Start the bot**: `npm start`
-8. **Set up cron job**:
+8. **Set up cron jobs**:
    ```bash
    crontab -e
-   # Add: */30 * * * * cd /path/to/bot && npm run check-matches
+   # Add:
+   */30 * * * * cd /path/to/bot && npm run get-matches
+   0 10 * * * cd /path/to/bot && npm run check-matches
+   */5 * * * * cd /path/to/bot && npm run check-upcoming-matches
    ```
 
-### Process Management
-
-Use PM2 to keep the bot running:
-
-```bash
-npm install -g pm2
-pm2 start dist/index.js --name "karmine-bot"
-pm2 save
-pm2 startup
-```
-
-## Development
+## 🛠️ Development
 
 ```bash
 # Run in development mode
 npm run dev
 
 # Generate Prisma client
-npm run db:generate
+npx prisma migrate dev --name init
 
-# Push database changes
-npm run db:push
+# Test match fetching
+npm run get-matches
 
-# Open Prisma Studio
-npm run db:studio
-
-# Test match checking
+# Test announcements
 npm run check-matches
 
-# Test timer system
-npm run test-timer
-
-# Test integration
-npm run test-integration
+# Test pre-match notifications
+npm run check-upcoming-matches
 ```
 
-## Database Schema
+## 📊 Database Schema
 
 ### Match Table
 
@@ -313,10 +219,11 @@ npm run test-integration
 
 - `guildId` - Discord guild ID (primary key)
 - `channelId` - Announcement channel ID
-- `customMessage` - Custom announcement message with placeholders {team}, {hour}, {game}
+- `customMessage` - Custom announcement message
 - `filteredTeams` - Array of team IDs to filter matches
+- `enablePreMatchNotifications` - Enable pre-match notifications
 
-## Troubleshooting
+## 🔧 Troubleshooting
 
 ### Common Issues
 
@@ -339,7 +246,7 @@ npm run test-integration
    - Check bot logs for API errors
    - Test with `npm run check-matches`
 
-4. **External script errors**
+4. **Script errors**
    - Ensure the project is built: `npm run build`
    - Check environment variables are set
    - Verify database connection
@@ -349,17 +256,13 @@ npm run test-integration
 The bot logs all activities to the console. Check for:
 
 - `[INFO]` - Normal operations
-- `[ERROR]` - Errors that need attention
+- `[ERROR]` - Errors requiring attention
 - `[WARN]` - Warnings about potential issues
 
-## Contributing
+## 🤝 Contributing
 
 1. Fork the repository
 2. Create a feature branch
 3. Make your changes
 4. Test thoroughly
 5. Submit a pull request
-
-## License
-
-MIT License - see LICENSE file for details
