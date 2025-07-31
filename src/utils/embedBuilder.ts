@@ -55,10 +55,12 @@ export async function createMatchEmbed(
   const embed = new EmbedBuilder()
     .setColor(embedColor)
     .setTitle(`⚔️ ${match.kcTeam} VS ${match.opponent} ⚔️`)
+    .setDescription(
+      `**${match.leagueName}** - **${match.serieName}** - **${match.tournamentName}**`
+    )
     .addFields([
       { name: "Date", value: dateString, inline: true },
       { name: "Heure", value: timeString, inline: true },
-      { name: "Tournoi", value: match.tournamentName, inline: true },
       {
         name: "Games",
         value: `Bo${match.numberOfGames.toString()}`,
