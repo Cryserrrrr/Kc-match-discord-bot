@@ -56,7 +56,7 @@ export async function createMatchEmbed(
     .setColor(embedColor)
     .setTitle(`⚔️ ${match.kcTeam} VS ${match.opponent} ⚔️`)
     .setDescription(
-      `**${match.leagueName}** - **${match.serieName}** - **${match.tournamentName}**`
+      `${match.leagueName} - ${match.serieName} - ${match.tournamentName}`
     )
     .addFields([
       { name: "Date", value: dateString, inline: true },

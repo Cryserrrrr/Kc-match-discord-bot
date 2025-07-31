@@ -310,31 +310,31 @@ async function showMessageConfig(interaction: any, guildSettings: any) {
     .setPlaceholder("Sélectionnez un message prédéfini")
     .addOptions(
       new StringSelectMenuOptionBuilder()
-        .setLabel("@everyone Match du jour !")
-        .setValue("@everyone Match du jour !")
+        .setLabel("@everyone Match(s) du jour !")
+        .setValue("@everyone Match(s) du jour !")
         .setDescription("Message par défaut")
         .setDefault(
-          guildSettings?.customMessage === "@everyone Match du jour !"
+          guildSettings?.customMessage === "@everyone Match(s) du jour !"
         ),
       new StringSelectMenuOptionBuilder()
-        .setLabel("@here Match Karmine Corp !")
-        .setValue("@here Match Karmine Corp !")
-        .setDescription("Notification avec @here")
+        .setLabel("@everyone Today Match(s) !")
+        .setValue("@everyone Today Match(s) !")
+        .setDescription("Notification avec @everyone")
         .setDefault(
-          guildSettings?.customMessage === "@here Match Karmine Corp !"
+          guildSettings?.customMessage === "@everyone Today KC Match(s) !"
         ),
       new StringSelectMenuOptionBuilder()
-        .setLabel("🏆 Match KC en cours !")
-        .setValue("🏆 Match KC en cours !")
+        .setLabel("🏆 Match(s) KC Du jour !")
+        .setValue("🏆 Match(s) KC Du jour !")
         .setDescription("Message avec emoji")
-        .setDefault(guildSettings?.customMessage === "🏆 Match KC en cours !"),
-      new StringSelectMenuOptionBuilder()
-        .setLabel("⚡ Match live Karmine Corp !")
-        .setValue("⚡ Match live Karmine Corp !")
-        .setDescription("Message dynamique")
         .setDefault(
-          guildSettings?.customMessage === "⚡ Match live Karmine Corp !"
-        )
+          guildSettings?.customMessage === "🏆 Match(s) KC Du jour !"
+        ),
+      new StringSelectMenuOptionBuilder()
+        .setLabel("⚡ Today KC Match(s) !")
+        .setValue("⚡ Today KC Match(s) !")
+        .setDescription("Message dynamique")
+        .setDefault(guildSettings?.customMessage === "⚡ Today KC Match(s) !")
     );
 
   const messageRow =
