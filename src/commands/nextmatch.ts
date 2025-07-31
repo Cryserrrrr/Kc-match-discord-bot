@@ -38,19 +38,34 @@ export async function execute(interaction: CommandInteraction) {
     const selectedTeam =
       (interaction as any).options?.getString("team") || "all";
 
+    // Get guild settings to check team filters
+    const guildId = interaction.guildId!;
+    const guildSettings = await prisma.guildSettings.findUnique({
+      where: { guildId },
+    });
+
+    const filteredTeams = (guildSettings as any)?.filteredTeams || [];
+    logger.info(`Filtered teams: ${filteredTeams}`);
+
     // Build the where clause based on team selection
     const whereClause: any = {
       beginAt: {
         gte: new Date(),
       },
+      kcId: { in: filteredTeams },
     };
 
     // If a specific team is selected, filter by that team
     if (selectedTeam !== "all") {
       whereClause.kcId = selectedTeam;
+    } else if (filteredTeams.length > 0) {
+      // If no specific team is selected but there are filtered teams, use the filter
+      whereClause.kcId = {
+        in: filteredTeams,
+      };
     }
 
-    // Find the next unannounced match
+    // Find the next match
     const nextMatch = await prisma.match.findFirst({
       where: whereClause,
       orderBy: {
@@ -59,10 +74,19 @@ export async function execute(interaction: CommandInteraction) {
     });
 
     if (!nextMatch) {
-      const teamText =
-        selectedTeam === "all"
-          ? "Karmine Corp"
-          : getTeamDisplayName(selectedTeam);
+      let teamText: string;
+      if (selectedTeam === "all") {
+        if (filteredTeams.length > 0) {
+          const teamNames = filteredTeams.map((id: string) =>
+            getTeamDisplayName(id)
+          );
+          teamText = teamNames.join(", ");
+        } else {
+          teamText = "Karmine Corp";
+        }
+      } else {
+        teamText = getTeamDisplayName(selectedTeam);
+      }
       await interaction.editReply(
         `Aucun match à venir trouvé pour ${teamText}! 🏆`
       );
@@ -84,43 +108,56 @@ export async function execute(interaction: CommandInteraction) {
     });
 
     // Create select menu for team selection
+    const menuOptions = [
+      new StringSelectMenuOptionBuilder()
+        .setLabel("Toutes les équipes")
+        .setDescription(
+          filteredTeams.length > 0
+            ? `Voir le prochain match des équipes filtrées (${filteredTeams.length} équipe(s))`
+            : "Voir le prochain match de toutes les équipes"
+        )
+        .setValue("all"),
+    ];
+
+    // Add team options, only including filtered teams if filters are set
+    const allTeams = [
+      {
+        id: "134078",
+        name: "KC (LEC)",
+        desc: "Équipe principale League of Legends",
+      },
+      {
+        id: "128268",
+        name: "KCB (LFL)",
+        desc: "Équipe académique League of Legends",
+      },
+      {
+        id: "136080",
+        name: "KCBS (LFL2)",
+        desc: "Équipe LFL2 League of Legends",
+      },
+      { id: "130922", name: "KC Valorant", desc: "Équipe principale Valorant" },
+      { id: "132777", name: "KCGC Valorant", desc: "Équipe féminine Valorant" },
+      { id: "136165", name: "KCBS Valorant", desc: "Équipe KCBS Valorant" },
+      { id: "129570", name: "KC Rocket League", desc: "Équipe Rocket League" },
+    ];
+
+    allTeams.forEach((team) => {
+      // Only add team if no filters are set, or if the team is in the filtered list
+      if (filteredTeams.length === 0 || filteredTeams.includes(team.id)) {
+        menuOptions.push(
+          new StringSelectMenuOptionBuilder()
+            .setLabel(team.name)
+            .setDescription(team.desc)
+            .setValue(team.id)
+        );
+      }
+    });
+
     const selectMenu = new StringSelectMenuBuilder()
       .setCustomId("team_select")
       .setPlaceholder("Choisir une équipe")
-      .addOptions(
-        new StringSelectMenuOptionBuilder()
-          .setLabel("Toutes les équipes")
-          .setDescription("Voir le prochain match de toutes les équipes")
-          .setValue("all"),
-        new StringSelectMenuOptionBuilder()
-          .setLabel("KC (LEC)")
-          .setDescription("Équipe principale League of Legends")
-          .setValue("134078"),
-        new StringSelectMenuOptionBuilder()
-          .setLabel("KCB (LFL)")
-          .setDescription("Équipe académique League of Legends")
-          .setValue("128268"),
-        new StringSelectMenuOptionBuilder()
-          .setLabel("KCBS (LFL2)")
-          .setDescription("Équipe LFL2 League of Legends")
-          .setValue("136080"),
-        new StringSelectMenuOptionBuilder()
-          .setLabel("KC Valorant")
-          .setDescription("Équipe principale Valorant")
-          .setValue("130922"),
-        new StringSelectMenuOptionBuilder()
-          .setLabel("KCGC Valorant")
-          .setDescription("Équipe féminine Valorant")
-          .setValue("132777"),
-        new StringSelectMenuOptionBuilder()
-          .setLabel("KCBS Valorant")
-          .setDescription("Équipe KCBS Valorant")
-          .setValue("136165"),
-        new StringSelectMenuOptionBuilder()
-          .setLabel("KC Rocket League")
-          .setDescription("Équipe Rocket League")
-          .setValue("129570")
-      );
+      .addOptions(menuOptions);
 
     const row = new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(
       selectMenu

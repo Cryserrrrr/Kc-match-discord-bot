@@ -81,7 +81,6 @@ async function checkAndAnnounceMatches(client: Client, prisma: PrismaClient) {
             tournamentName: match.tournament.name,
             numberOfGames: match.number_of_games,
             beginAt: new Date(match.scheduled_at),
-            announced: false,
           },
         });
 

@@ -143,30 +143,65 @@ The script will:
 
 - Connect to Discord and the database
 - Fetch matches from PandaScore API
-- Check for new matches not yet announced
+- Check for new matches
 - Send announcements to configured channels
-- Update the database to mark matches as announced
 - Exit cleanly
 
 ### Integration with External Systems
 
 You can integrate the match checking with:
 
+#### Option 1: Integrated Service (Recommended)
+
+The notification service is now integrated with the bot and starts automatically:
+
+```bash
+npm start
+# or
+npm run dev
+```
+
+This automatically:
+
+- Starts the Discord bot
+- Starts the notification service
+- Checks for upcoming matches every hour
+- Schedules notifications exactly 30 minutes before each match
+- Manages timers automatically
+- Stays running until stopped
+
+#### Option 2: Standalone Service
+
+Run the notification service separately:
+
+```bash
+npm run notification-service
+```
+
+This service:
+
+- Checks for upcoming matches every hour
+- Schedules notifications exactly 30 minutes before each match
+- Manages timers automatically
+- Stays running until stopped
+
+#### Option 2: Cron Jobs (Legacy)
+
 - **Cron jobs** (Linux/macOS):
 
   ```bash
-  */30 * * * * cd /path/to/bot && npm run check-matches
+  0 * * * * cd /path/to/bot && npm run check-upcoming
   ```
 
 - **Task Scheduler** (Windows):
 
   ```cmd
-  npm run check-matches
+  npm run check-upcoming
   ```
 
 - **Coolify Cron Jobs**:
   ```bash
-  npm run check-matches
+  npm run check-upcoming
   ```
 
 ## Deployment
@@ -249,6 +284,12 @@ npm run db:studio
 
 # Test match checking
 npm run check-matches
+
+# Test timer system
+npm run test-timer
+
+# Test integration
+npm run test-integration
 ```
 
 ## Database Schema
@@ -256,17 +297,24 @@ npm run check-matches
 ### Match Table
 
 - `id` - PandaScore match ID (primary key)
-- `game` - Game type (lol, valorant, rocket_league)
+- `kcTeam` - KC team name (KC, KCB, KCBS, etc.)
+- `kcId` - KC team ID
 - `opponent` - Opponent team name
+- `opponentImage` - Opponent team image URL
+- `leagueName` - League name
+- `leagueImage` - League image URL
+- `serieName` - Serie name
+- `tournamentName` - Tournament name
+- `numberOfGames` - Number of games in the match
 - `beginAt` - Match start time
-- `announced` - Whether the match has been announced
 - `createdAt` - Record creation timestamp
 
 ### Guild Settings Table
 
 - `guildId` - Discord guild ID (primary key)
 - `channelId` - Announcement channel ID
-- `customMessage` - Custom announcement message
+- `customMessage` - Custom announcement message with placeholders {team}, {hour}, {game}
+- `filteredTeams` - Array of team IDs to filter matches
 
 ## Troubleshooting
 

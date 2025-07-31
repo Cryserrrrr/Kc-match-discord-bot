@@ -3,87 +3,49 @@
 const { REST, Routes } = require("discord.js");
 require("dotenv").config();
 
-const commands = [
-  {
-    name: "nextmatch",
-    description: "Afficher le prochain match de Karmine Corp",
-    type: 1, // CHAT_INPUT
-    options: [
-      {
-        name: "team",
-        description: "Choisir une équipe spécifique de Karmine Corp",
-        type: 3, // String type
-        required: false,
-        choices: [
-          { name: "Toutes les équipes", value: "all" },
-          { name: "KC (LEC)", value: "134078" },
-          { name: "KCB (LFL)", value: "128268" },
-          { name: "KCBS (LFL2)", value: "136080" },
-          { name: "KC Valorant", value: "130922" },
-          { name: "KCGC Valorant", value: "132777" },
-          { name: "KCBS Valorant", value: "136165" },
-          { name: "KC Rocket League", value: "129570" },
-        ],
-      },
-    ],
-  },
-  {
-    name: "setchannel",
-    description: "Définir le salon Discord pour les annonces de matchs",
-    type: 1, // CHAT_INPUT
-    options: [
-      {
-        name: "channel",
-        description: "Le salon où les annonces de matchs seront envoyées",
-        type: 7, // Channel type
-        required: true,
-        channel_types: [0], // Guild text channel
-      },
-    ],
-    default_member_permissions: "32", // Manage Server permission
-  },
-  {
-    name: "setphrase",
-    description: "Personnaliser le message d'annonce de match",
-    type: 1, // CHAT_INPUT
-    options: [
-      {
-        name: "message",
-        description:
-          "Message d'annonce personnalisé (ex: '@everyone Match du jour')",
-        type: 3, // String type
-        required: true,
-        max_length: 500,
-      },
-    ],
-    default_member_permissions: "32", // Manage Server permission
-  },
-  {
-    name: "filterteams",
-    description:
-      "Choisir quelles équipes de Karmine Corp doivent être annoncées",
-    type: 1, // CHAT_INPUT
-    options: [
-      {
-        name: "teams",
-        description:
-          "Sélectionner les équipes à annoncer (vide = toutes les équipes)",
-        type: 3, // String type
-        required: false,
-        choices: [
-          { name: "KC (LEC)", value: "134078" },
-          { name: "KCB (LFL)", value: "128268" },
-          { name: "KCBS (LFL2)", value: "136080" },
-          { name: "KC Valorant", value: "130922" },
-          { name: "KCGC Valorant", value: "132777" },
-          { name: "KCBS Valorant", value: "136165" },
-          { name: "KC Rocket League", value: "129570" },
-        ],
-      },
-    ],
-    default_member_permissions: "32", // Manage Server permission
-  },
-];
+// Load commands dynamically from TypeScript files
+const fs = require("fs");
+const path = require("path");
+
+function loadCommands() {
+  const commands = [];
+  const commandsPath = path.join(__dirname, "..", "src", "commands");
+
+  const commandFiles = fs
+    .readdirSync(commandsPath)
+    .filter((file) => file.endsWith(".js") || file.endsWith(".ts"))
+    .filter((file) => !file.endsWith(".d.ts"))
+    .filter(
+      (file) => file !== "commandLoader.js" && file !== "commandLoader.ts"
+    );
+
+  for (const file of commandFiles) {
+    try {
+      const filePath = path.join(commandsPath, file);
+      const command = require(filePath);
+
+      if (command.data) {
+        const commandData = command.data.toJSON();
+        // Check for duplicate names
+        const existingCommand = commands.find(
+          (cmd) => cmd.name === commandData.name
+        );
+        if (existingCommand) {
+          console.log(`⚠️  Skipping duplicate command: ${commandData.name}`);
+        } else {
+          commands.push(commandData);
+          console.log(`Loaded command: ${commandData.name}`);
+        }
+      }
+    } catch (error) {
+      console.error(`Error loading command from ${file}:`, error);
+    }
+  }
+
+  return commands;
+}
+
+const commands = loadCommands();
 
 const rest = new REST({ version: "10" }).setToken(process.env.DISCORD_TOKEN);
 
@@ -101,15 +63,28 @@ const rest = new REST({ version: "10" }).setToken(process.env.DISCORD_TOKEN);
         process.exit(1);
       }
 
-      // Add ping command only for development (guild-specific)
-      const devCommands = [
-        {
-          name: "ping",
-          description: "Check if the bot is working",
-          type: 1, // CHAT_INPUT
-        },
-        ...commands,
-      ];
+      // First, delete all existing commands
+      console.log("🗑️  Deleting existing commands...");
+      await rest.put(
+        Routes.applicationGuildCommands(
+          process.env.CLIENT_ID,
+          process.env.GUILD_ID
+        ),
+        { body: [] }
+      );
+
+      // Wait a moment for Discord to process the deletion
+      console.log("⏳ Waiting for Discord to process deletion...");
+      await new Promise((resolve) => setTimeout(resolve, 2000));
+
+      // Use all loaded commands (including ping from the files)
+      const devCommands = [...commands];
+
+      console.log("📤 Deploying new commands...");
+      console.log(
+        "Commands to deploy:",
+        devCommands.map((cmd) => cmd.name)
+      );
 
       await rest.put(
         Routes.applicationGuildCommands(
@@ -125,6 +100,13 @@ const rest = new REST({ version: "10" }).setToken(process.env.DISCORD_TOKEN);
     } else {
       console.log("🚀 Production mode: Deploying commands globally...");
 
+      // First, delete all existing commands
+      console.log("🗑️  Deleting existing commands...");
+      await rest.put(Routes.applicationCommands(process.env.CLIENT_ID), {
+        body: [],
+      });
+
+      console.log("📤 Deploying new commands...");
       await rest.put(Routes.applicationCommands(process.env.CLIENT_ID), {
         body: commands,
       });

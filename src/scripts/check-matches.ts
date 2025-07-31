@@ -75,14 +75,15 @@ async function getMatchesNext24Hours(prisma: PrismaClient) {
         gte: now,
         lte: tomorrow,
       },
-      announced: false,
     },
     orderBy: {
       beginAt: "asc",
     },
   });
 
-  console.log(`📊 Found ${matches.length} unannounced matches in database`);
+  console.log(
+    `📊 Found ${matches.length} matches in database for the next 24 hours`
+  );
 
   // Log each match found
   matches.forEach((match, index) => {
@@ -205,43 +206,6 @@ async function announceAllMatches(
           error
         );
       }
-    }
-
-    // Mark all matches as announced (only the ones that were actually announced)
-    const announcedMatchIds = new Set<string>();
-
-    for (const settings of guildSettings) {
-      let filteredMatches = matches;
-
-      // If filteredTeams is not empty, only mark matches for those teams as announced
-      if (
-        (settings as any).filteredTeams &&
-        (settings as any).filteredTeams.length > 0
-      ) {
-        filteredMatches = matches.filter((match) =>
-          (settings as any).filteredTeams.includes(match.kcId)
-        );
-      }
-
-      filteredMatches.forEach((match) => announcedMatchIds.add(match.id));
-    }
-
-    const matchIds = Array.from(announcedMatchIds);
-    if (matchIds.length > 0) {
-      await prisma.match.updateMany({
-        where: {
-          id: {
-            in: matchIds,
-          },
-        },
-        data: {
-          announced: true,
-        },
-      });
-
-      console.log(
-        `✅ Marked ${matchIds.length} matches as announced in database`
-      );
     }
   } catch (error) {
     console.error("❌ Error announcing matches:", error);

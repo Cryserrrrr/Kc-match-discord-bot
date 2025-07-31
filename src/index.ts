@@ -22,7 +22,6 @@ client.once("ready", async () => {
   try {
     await loadCommands(client);
     logger.info("Commands loaded successfully");
-    logger.info("Bot is ready! Use external script to check for new matches.");
   } catch (error) {
     logger.error("Error during bot initialization:", error);
   }
@@ -65,12 +64,20 @@ client.on("interactionCreate", async (interaction) => {
 
 async function handleTeamSelect(interaction: any) {
   const selectedTeam = interaction.values[0];
+  const guildId = interaction.guildId!;
+  const guildSettings = await prisma.guildSettings.findUnique({
+    where: { guildId },
+  });
+  const filteredTeams = (guildSettings as any)?.filteredTeams || [];
+
   const whereClause: any = {
     beginAt: { gte: new Date() },
   };
 
   if (selectedTeam !== "all") {
     whereClause.kcId = selectedTeam;
+  } else if (filteredTeams.length > 0) {
+    whereClause.kcId = { in: filteredTeams };
   }
 
   const nextMatch = await prisma.match.findFirst({

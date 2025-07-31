@@ -74,7 +74,7 @@ export async function createMatchEmbed(
 
 function getEmbedColor(kcId: string): number {
   // League of Legends teams
-  if (kcId === "136165" || kcId === "128268" || kcId === "136080") {
+  if (kcId === "134078" || kcId === "128268" || kcId === "136080") {
     return 0x1e90ff; // Dodger Blue for LoL
   }
 

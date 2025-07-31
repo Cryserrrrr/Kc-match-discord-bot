@@ -7,29 +7,109 @@ import dotenv from "dotenv";
 // Load environment variables
 dotenv.config();
 
-const prisma = new PrismaClient();
+// Global instances with connection pooling
+let prisma: PrismaClient | null = null;
+let client: Client | null = null;
+let isClientReady = false;
 
-// Initialize Discord client
-const client = new Client({
-  intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages],
-});
+// Cache for guild settings to avoid repeated database queries
+let guildSettingsCache: any[] | null = null;
+let lastCacheUpdate = 0;
+const CACHE_DURATION = 5 * 60 * 1000; // 5 minutes
+
+// Initialize Prisma with connection pooling
+function getPrismaClient(): PrismaClient {
+  if (!prisma) {
+    prisma = new PrismaClient({
+      datasources: {
+        db: {
+          url: process.env.DATABASE_URL,
+        },
+      },
+      // Optimize for frequent short-lived connections
+      log: ["error", "warn"],
+    });
+  }
+  return prisma;
+}
+
+// Initialize Discord client with connection reuse
+async function getDiscordClient(): Promise<Client> {
+  if (!client) {
+    client = new Client({
+      intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages],
+    });
+  }
+
+  if (!isClientReady) {
+    try {
+      await client.login(process.env.DISCORD_TOKEN);
+      isClientReady = true;
+      logger.info(`Logged in as ${client.user?.tag}`);
+    } catch (error) {
+      logger.error("Failed to login to Discord:", error);
+      throw error;
+    }
+  }
+
+  return client;
+}
+
+// Cache guild settings to avoid repeated database queries
+async function getGuildSettings(): Promise<any[]> {
+  const now = Date.now();
+
+  if (guildSettingsCache && now - lastCacheUpdate < CACHE_DURATION) {
+    return guildSettingsCache;
+  }
+
+  const prismaClient = getPrismaClient();
+  guildSettingsCache = await prismaClient.guildSettings.findMany();
+
+  lastCacheUpdate = now;
+  logger.debug(
+    `Updated guild settings cache with ${guildSettingsCache.length} entries`
+  );
+
+  return guildSettingsCache;
+}
 
 async function checkUpcomingMatches() {
+  const startTime = Date.now();
+  let prismaClient: PrismaClient | null = null;
+
   try {
     logger.info("Starting check for upcoming matches...");
 
-    // Get current time and time in 1 hour
+    // Get current time
     const now = new Date();
-    const oneHourFromNow = new Date(now.getTime() + 60 * 60 * 1000);
 
-    // Find matches that are scheduled within the next hour and haven't been announced
-    const upcomingMatches = await prisma.match.findMany({
+    // Find matches that start in the next 30-35 minutes (to account for cron frequency)
+    const thirtyMinutesFromNow = new Date(now.getTime() + 30 * 60 * 1000);
+    const thirtyFiveMinutesFromNow = new Date(now.getTime() + 35 * 60 * 1000);
+
+    prismaClient = getPrismaClient();
+
+    // Optimized query with specific field selection
+    const upcomingMatches = await prismaClient.match.findMany({
       where: {
         beginAt: {
-          gte: now,
-          lte: oneHourFromNow,
+          gte: thirtyMinutesFromNow,
+          lte: thirtyFiveMinutesFromNow,
         },
-        announced: false,
+      },
+      select: {
+        id: true,
+        kcTeam: true,
+        kcId: true,
+        opponent: true,
+        opponentImage: true,
+        tournamentName: true,
+        leagueName: true,
+        leagueImage: true,
+        serieName: true,
+        numberOfGames: true,
+        beginAt: true,
       },
       orderBy: {
         beginAt: "asc",
@@ -37,132 +117,169 @@ async function checkUpcomingMatches() {
     });
 
     logger.info(
-      `Found ${upcomingMatches.length} upcoming matches within the next hour`
+      `Found ${upcomingMatches.length} matches starting in the next 30-35 minutes`
     );
 
     if (upcomingMatches.length === 0) {
-      logger.info("No upcoming matches to announce");
+      logger.info("No matches to notify about");
       return;
     }
 
-    // Get all guild settings
-    const guildSettings = await prisma.guildSettings.findMany();
+    // Get guild settings once and reuse
+    const guildSettings = await getGuildSettings();
 
     if (guildSettings.length === 0) {
       logger.warn("No guild settings found. No channels to announce to.");
       return;
     }
 
-    // Login to Discord
-    await client.login(process.env.DISCORD_TOKEN);
+    // Process matches in parallel for better performance
+    const notificationPromises = upcomingMatches.map((match) =>
+      sendNotificationForMatch(match, guildSettings)
+    );
 
-    // Wait for client to be ready
-    await new Promise<void>((resolve) => {
-      client.once("ready", () => {
-        logger.info(`Logged in as ${client.user?.tag}`);
-        resolve();
-      });
-    });
+    await Promise.allSettled(notificationPromises);
 
-    // Announce each match
-    for (const match of upcomingMatches) {
-      try {
-        // Create embed for the match
-        const embed = await createMatchEmbed({
-          kcTeam: match.kcTeam,
-          kcId: match.kcId,
-          opponent: match.opponent,
-          opponentImage: match.opponentImage || undefined,
-          tournamentName: match.tournamentName,
-          leagueName: match.leagueName,
-          leagueImage: match.leagueImage || undefined,
-          serieName: match.serieName,
-          numberOfGames: match.numberOfGames,
-          beginAt: match.beginAt,
-        });
-
-        // Send announcement to all configured channels
-        for (const setting of guildSettings) {
-          try {
-            const guild = client.guilds.cache.get(setting.guildId);
-            if (!guild) {
-              logger.warn(`Guild ${setting.guildId} not found`);
-              continue;
-            }
-
-            const channel = guild.channels.cache.get(
-              setting.channelId
-            ) as TextChannel;
-            if (!channel) {
-              logger.warn(
-                `Channel ${setting.channelId} not found in guild ${setting.guildId}`
-              );
-              continue;
-            }
-
-            // Check if this match should be announced based on team filter
-            if (
-              (setting as any).filteredTeams &&
-              (setting as any).filteredTeams.length > 0
-            ) {
-              if (!(setting as any).filteredTeams.includes(match.kcId)) {
-                logger.info(
-                  `Skipping match ${match.id} for guild ${setting.guildId} - team ${match.kcId} not in filter`
-                );
-                return;
-              }
-            }
-
-            // Replace placeholders in custom message if it exists
-            let message = `🚨 **Match de dernière minute !** 🚨\n${setting.customMessage}`;
-
-            // Send the announcement
-            await channel.send({
-              content: message,
-              embeds: [embed],
-            });
-
-            logger.info(
-              `Announced match ${match.id} to channel ${setting.channelId} in guild ${setting.guildId}`
-            );
-          } catch (error) {
-            logger.error(
-              `Error announcing match to guild ${setting.guildId}:`,
-              error
-            );
-          }
-        }
-
-        // Mark the match as announced
-        await prisma.match.update({
-          where: { id: match.id },
-          data: { announced: true },
-        });
-
-        logger.info(`Marked match ${match.id} as announced`);
-      } catch (error) {
-        logger.error(`Error processing match ${match.id}:`, error);
-      }
-    }
-
-    logger.info("Finished checking upcoming matches");
+    const executionTime = Date.now() - startTime;
+    logger.info(
+      `Finished checking and sending notifications for upcoming matches in ${executionTime}ms`
+    );
   } catch (error) {
     logger.error("Error in checkUpcomingMatches:", error);
   } finally {
-    await prisma.$disconnect();
-    await client.destroy();
+    // Don't disconnect Prisma client to keep connection pool alive
+    // Only destroy Discord client if it exists
+    if (client && isClientReady) {
+      try {
+        await client.destroy();
+        client = null;
+        isClientReady = false;
+      } catch (error) {
+        logger.warn("Error destroying Discord client:", error);
+      }
+    }
   }
 }
+
+async function sendNotificationForMatch(match: any, guildSettings: any[]) {
+  try {
+    logger.info(
+      `Sending 30-minute notification for match ${match.id} (${match.kcTeam} vs ${match.opponent})`
+    );
+
+    // Get Discord client
+    const discordClient = await getDiscordClient();
+
+    // Create embed for the match
+    const embed = await createMatchEmbed({
+      kcTeam: match.kcTeam,
+      kcId: match.kcId,
+      opponent: match.opponent,
+      opponentImage: match.opponentImage || undefined,
+      tournamentName: match.tournamentName,
+      leagueName: match.leagueName,
+      leagueImage: match.leagueImage || undefined,
+      serieName: match.serieName,
+      numberOfGames: match.numberOfGames,
+      beginAt: match.beginAt,
+    });
+
+    // Send notification to all configured channels in parallel
+    const channelPromises = guildSettings.map(async (setting) => {
+      try {
+        // Check if pre-match notifications are enabled for this guild
+        if (!setting.enablePreMatchNotifications) {
+          logger.debug(
+            `Skipping match ${match.id} for guild ${setting.guildId} - pre-match notifications disabled`
+          );
+          return;
+        }
+
+        // Check if this match should be announced based on team filter
+        if (setting.filteredTeams && setting.filteredTeams.length > 0) {
+          if (!setting.filteredTeams.includes(match.kcId)) {
+            logger.debug(
+              `Skipping match ${match.id} for guild ${setting.guildId} - team ${match.kcId} not in filter`
+            );
+            return;
+          }
+        }
+
+        const guild = discordClient.guilds.cache.get(setting.guildId);
+        if (!guild) {
+          logger.warn(`Guild ${setting.guildId} not found`);
+          return;
+        }
+
+        const channel = guild.channels.cache.get(
+          setting.channelId
+        ) as TextChannel;
+        if (!channel) {
+          logger.warn(
+            `Channel ${setting.channelId} not found in guild ${setting.guildId}`
+          );
+          return;
+        }
+
+        // Send the notification with timeout
+        const message = `⏰ **Match dans 30 minutes !** ⏰\n${setting.customMessage}`;
+
+        await Promise.race([
+          channel.send({
+            content: message,
+            embeds: [embed],
+          }),
+          new Promise((_, reject) =>
+            setTimeout(() => reject(new Error("Send timeout")), 10000)
+          ),
+        ]);
+
+        logger.info(
+          `Sent 30-minute notification for match ${match.id} to channel ${setting.channelId} in guild ${setting.guildId}`
+        );
+      } catch (error) {
+        logger.error(
+          `Error sending notification to guild ${setting.guildId}:`,
+          error
+        );
+      }
+    });
+
+    await Promise.allSettled(channelPromises);
+  } catch (error) {
+    logger.error(`Error sending notification for match ${match.id}:`, error);
+  }
+}
+
+// Cleanup function for graceful shutdown
+export async function cleanup() {
+  if (prisma) {
+    await prisma.$disconnect();
+    prisma = null;
+  }
+  if (client && isClientReady) {
+    await client.destroy();
+    client = null;
+    isClientReady = false;
+  }
+  guildSettingsCache = null;
+}
+
+// Handle process termination
+process.on("SIGINT", cleanup);
+process.on("SIGTERM", cleanup);
 
 // Run the script if called directly
 if (require.main === module) {
   checkUpcomingMatches()
-    .then(() => {
+    .then(async () => {
       logger.info("Script completed successfully");
+      await cleanup();
       process.exit(0);
     })
-    .catch((error) => {
+    .catch(async (error) => {
       logger.error("Script failed:", error);
+      await cleanup();
       process.exit(1);
     });
 }

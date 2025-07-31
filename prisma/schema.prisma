@@ -22,17 +22,17 @@ model Match {
   tournamentName  String   // Tournament name
   numberOfGames   Int      // Number of games in the match
   beginAt         DateTime // Match date/time
-  announced       Boolean  @default(false) // Whether match has been announced
   createdAt       DateTime @default(now())
 
   @@map("matches")
 }
 
 model GuildSettings {
-  guildId       String @id
-  channelId     String // Discord channel ID
-  customMessage String // Custom message with placeholders {team}, {hour}, {game}
-  filteredTeams String[] @default([]) // Array of team IDs to filter matches
+  guildId                    String @id
+  channelId                  String // Discord channel ID
+  customMessage              String // Custom message with placeholders {team}, {hour}, {game}
+  filteredTeams              String[] @default([]) // Array of team IDs to filter matches
+  enablePreMatchNotifications Boolean @default(true) // Enable/disable 30-minute pre-match notifications
 
   @@map("guild_settings")
 } 

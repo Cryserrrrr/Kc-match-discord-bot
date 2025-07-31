@@ -36,7 +36,7 @@ export async function execute(interaction: CommandInteraction) {
     if (!existingSettings) {
       await interaction.reply({
         content:
-          "❌ Veuillez d'abord définir un salon d'annonce avec `/setchannel` !",
+          "❌ Veuillez d'abord définir un salon d'annonce avec `/config` !",
         flags: 64,
       });
       return;
