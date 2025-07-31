@@ -120,7 +120,7 @@ export async function execute(interaction: CommandInteraction) {
       new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(mainMenu);
 
     // Send initial embed
-    await interaction.reply({
+    await interaction.editReply({
       embeds: [mainEmbed],
       components: [mainRow],
     });
@@ -170,10 +170,9 @@ export async function execute(interaction: CommandInteraction) {
     });
   } catch (error) {
     logger.error("Error in config command:", error);
-    await interaction.reply({
+    await interaction.editReply({
       content:
         "Une erreur s'est produite lors de l'ouverture de la configuration.",
-      flags: 64,
     });
   }
 }

@@ -5,6 +5,12 @@ import { loadCommands } from "./commands/commandLoader";
 import { logger } from "./utils/logger";
 import { createMatchEmbed } from "./utils/embedBuilder";
 import { getTeamDisplayName } from "./utils/teamMapper";
+import { CONFIG, ERROR_MESSAGES } from "./utils/config";
+import {
+  safeInteractionDefer,
+  safeInteractionReply,
+  withTimeout,
+} from "./utils/timeoutUtils";
 
 config();
 
@@ -33,6 +39,9 @@ client.on("interactionCreate", async (interaction) => {
     if (!command) return;
 
     try {
+      // Defer reply immediately to prevent timeout
+      await safeInteractionDefer(interaction);
+
       await command.execute(interaction);
     } catch (error) {
       logger.error(
@@ -41,7 +50,7 @@ client.on("interactionCreate", async (interaction) => {
       );
       await sendErrorMessage(
         interaction,
-        "Une erreur s'est produite lors de l'exécution de cette commande !"
+        ERROR_MESSAGES.GENERAL.COMMAND_EXECUTION_ERROR
       );
     }
   }
@@ -51,12 +60,15 @@ client.on("interactionCreate", async (interaction) => {
     interaction.customId === "team_select"
   ) {
     try {
+      // Defer reply immediately to prevent timeout
+      await safeInteractionDefer(interaction);
+
       await handleTeamSelect(interaction);
     } catch (error) {
       logger.error("Error handling team select:", error);
       await sendErrorMessage(
         interaction,
-        "Une erreur s'est produite lors de la sélection de l'équipe."
+        ERROR_MESSAGES.GENERAL.INTERACTION_ERROR
       );
     }
   }
@@ -65,39 +77,48 @@ client.on("interactionCreate", async (interaction) => {
 async function handleTeamSelect(interaction: any) {
   const selectedTeam = interaction.values[0];
   const guildId = interaction.guildId!;
-  const guildSettings = await prisma.guildSettings.findUnique({
-    where: { guildId },
-  });
-  const filteredTeams = (guildSettings as any)?.filteredTeams || [];
-
-  const whereClause: any = {
-    beginAt: { gte: new Date() },
-  };
-
-  if (selectedTeam !== "all") {
-    whereClause.kcId = selectedTeam;
-  } else if (filteredTeams.length > 0) {
-    whereClause.kcId = { in: filteredTeams };
-  }
-
-  const nextMatch = await prisma.match.findFirst({
-    where: whereClause,
-    orderBy: { beginAt: "asc" },
-  });
-
-  if (!nextMatch) {
-    const teamText =
-      selectedTeam === "all"
-        ? "Karmine Corp"
-        : getTeamDisplayName(selectedTeam);
-    await interaction.reply({
-      content: `Aucun match à venir trouvé pour ${teamText}! 🏆`,
-      flags: 64,
-    });
-    return;
-  }
 
   try {
+    const guildSettings = await withTimeout(
+      prisma.guildSettings.findUnique({
+        where: { guildId },
+      }),
+      CONFIG.TIMEOUTS.DATABASE_QUERY,
+      ERROR_MESSAGES.TIMEOUT.DATABASE_QUERY
+    );
+
+    const filteredTeams = (guildSettings as any)?.filteredTeams || [];
+
+    const whereClause: any = {
+      beginAt: { gte: new Date() },
+    };
+
+    if (selectedTeam !== "all") {
+      whereClause.kcId = selectedTeam;
+    } else if (filteredTeams.length > 0) {
+      whereClause.kcId = { in: filteredTeams };
+    }
+
+    const nextMatch = await withTimeout(
+      prisma.match.findFirst({
+        where: whereClause,
+        orderBy: { beginAt: "asc" },
+      }),
+      CONFIG.TIMEOUTS.DATABASE_QUERY,
+      ERROR_MESSAGES.TIMEOUT.DATABASE_QUERY
+    );
+
+    if (!nextMatch) {
+      const teamText =
+        selectedTeam === "all"
+          ? "Karmine Corp"
+          : getTeamDisplayName(selectedTeam);
+      await safeInteractionReply(interaction, {
+        content: `Aucun match à venir trouvé pour ${teamText}! 🏆`,
+      });
+      return;
+    }
+
     const embed = await createMatchEmbed({
       kcTeam: nextMatch.kcTeam,
       kcId: nextMatch.kcId,
@@ -111,32 +132,20 @@ async function handleTeamSelect(interaction: any) {
       beginAt: nextMatch.beginAt,
     });
 
-    const response = { embeds: [embed], flags: 64 };
-    await sendResponse(interaction, response);
+    const response = { embeds: [embed] };
+    await safeInteractionReply(interaction, response);
   } catch (error) {
-    logger.error("Error creating match embed:", error);
-    const fallbackMessage = `Match trouvé : ${nextMatch.kcTeam} vs ${
-      nextMatch.opponent
-    } le ${nextMatch.beginAt.toLocaleDateString("fr-FR")}`;
-    await sendResponse(interaction, { content: fallbackMessage, flags: 64 });
-  }
-}
-
-async function sendResponse(interaction: any, response: any) {
-  if (!interaction.replied && !interaction.deferred) {
-    await interaction.reply(response);
-  } else {
-    await interaction.editReply(response);
+    logger.error("Error in handleTeamSelect:", error);
+    throw error;
   }
 }
 
 async function sendErrorMessage(interaction: any, message: string) {
   try {
-    if (!interaction.replied && !interaction.deferred) {
-      await interaction.reply({ content: message, flags: 64 });
-    } else if (interaction.deferred) {
-      await interaction.editReply({ content: message });
-    }
+    await safeInteractionReply(interaction, {
+      content: message,
+      ephemeral: true,
+    });
   } catch (error) {
     logger.error("Error sending error message:", error);
   }
@@ -148,8 +157,36 @@ client.on("error", (error) => {
 
 process.on("SIGINT", async () => {
   logger.info("Shutting down bot...");
-  await prisma.$disconnect();
+  try {
+    await prisma.$disconnect();
+    await client.destroy();
+  } catch (error) {
+    logger.error("Error during shutdown:", error);
+  }
   process.exit(0);
+});
+
+process.on("SIGTERM", async () => {
+  logger.info("Shutting down bot...");
+  try {
+    await prisma.$disconnect();
+    await client.destroy();
+  } catch (error) {
+    logger.error("Error during shutdown:", error);
+  }
+  process.exit(0);
+});
+
+// Handle uncaught exceptions
+process.on("uncaughtException", (error) => {
+  logger.error("Uncaught Exception:", error);
+  process.exit(1);
+});
+
+// Handle unhandled promise rejections
+process.on("unhandledRejection", (reason, promise) => {
+  logger.error("Unhandled Rejection at:", promise, "reason:", reason);
+  process.exit(1);
 });
 
 client.login(process.env.DISCORD_TOKEN);

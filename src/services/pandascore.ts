@@ -67,11 +67,38 @@ export class PandaScoreService {
           Accept: "application/json",
         },
         params,
+        timeout: 30000, // 30 second timeout
       });
       return response.data;
-    } catch (error) {
-      logger.error(`PandaScore API error for endpoint ${endpoint}:`, error);
-      throw error;
+    } catch (error: any) {
+      if (error.code === "ECONNABORTED") {
+        logger.error(`PandaScore API timeout for endpoint ${endpoint}`);
+        throw new Error(
+          `Timeout lors de la requête vers PandaScore: ${endpoint}`
+        );
+      } else if (error.response) {
+        logger.error(`PandaScore API error for endpoint ${endpoint}:`, {
+          status: error.response.status,
+          statusText: error.response.statusText,
+          data: error.response.data,
+        });
+        throw new Error(
+          `Erreur API PandaScore (${error.response.status}): ${error.response.statusText}`
+        );
+      } else if (error.request) {
+        logger.error(
+          `PandaScore API network error for endpoint ${endpoint}:`,
+          error.message
+        );
+        throw new Error(
+          `Erreur réseau lors de la requête vers PandaScore: ${error.message}`
+        );
+      } else {
+        logger.error(`PandaScore API error for endpoint ${endpoint}:`, error);
+        throw new Error(
+          `Erreur inattendue lors de la requête vers PandaScore: ${error.message}`
+        );
+      }
     }
   }
 
@@ -88,6 +115,8 @@ export class PandaScoreService {
     ];
 
     try {
+      logger.info(`Fetching matches for KC teams: ${kcTeamIds.join(", ")}`);
+
       // Fetch upcoming matches for all KC teams
       const matches = await this.makeRequest("/matches/upcoming", {
         "filter[opponent_id]": kcTeamIds.join(","),
@@ -109,7 +138,7 @@ export class PandaScoreService {
       return karmineMatches;
     } catch (error) {
       logger.error("Error fetching Karmine Corp matches:", error);
-      return [];
+      throw error; // Re-throw to let caller handle it
     }
   }
 
@@ -170,6 +199,11 @@ export class PandaScoreService {
   }
 
   async getMatchById(matchId: number): Promise<PandaScoreMatch> {
-    return await this.makeRequest(`/matches/${matchId}`);
+    try {
+      return await this.makeRequest(`/matches/${matchId}`);
+    } catch (error) {
+      logger.error(`Error fetching match by ID ${matchId}:`, error);
+      throw error;
+    }
   }
 }

@@ -33,26 +33,36 @@ export const data = new SlashCommandBuilder()
 export async function execute(interaction: CommandInteraction) {
   try {
     // Defer the reply immediately to prevent timeout
-    await interaction.deferReply();
+    if (!interaction.deferred && !interaction.replied) {
+      await interaction.deferReply();
+    }
 
     const selectedTeam =
       (interaction as any).options?.getString("team") || "all";
 
     // Get guild settings to check team filters
     const guildId = interaction.guildId!;
-    const guildSettings = await prisma.guildSettings.findUnique({
-      where: { guildId },
-    });
+    let guildSettings;
+
+    try {
+      guildSettings = await prisma.guildSettings.findUnique({
+        where: { guildId },
+      });
+    } catch (dbError) {
+      logger.error("Error fetching guild settings:", dbError);
+      await interaction.editReply(
+        "Erreur lors de la récupération des paramètres du serveur."
+      );
+      return;
+    }
 
     const filteredTeams = (guildSettings as any)?.filteredTeams || [];
-    logger.info(`Filtered teams: ${filteredTeams}`);
 
     // Build the where clause based on team selection
     const whereClause: any = {
       beginAt: {
         gte: new Date(),
       },
-      kcId: { in: filteredTeams },
     };
 
     // If a specific team is selected, filter by that team
@@ -66,12 +76,21 @@ export async function execute(interaction: CommandInteraction) {
     }
 
     // Find the next match
-    const nextMatch = await prisma.match.findFirst({
-      where: whereClause,
-      orderBy: {
-        beginAt: "asc",
-      },
-    });
+    let nextMatch;
+    try {
+      nextMatch = await prisma.match.findFirst({
+        where: whereClause,
+        orderBy: {
+          beginAt: "asc",
+        },
+      });
+    } catch (dbError) {
+      logger.error("Error fetching next match:", dbError);
+      await interaction.editReply(
+        "Erreur lors de la récupération du prochain match."
+      );
+      return;
+    }
 
     if (!nextMatch) {
       let teamText: string;
@@ -94,18 +113,27 @@ export async function execute(interaction: CommandInteraction) {
     }
 
     // Create embed using the utility function
-    const embed = await createMatchEmbed({
-      kcTeam: nextMatch.kcTeam,
-      kcId: nextMatch.kcId,
-      opponent: nextMatch.opponent,
-      opponentImage: nextMatch.opponentImage || undefined,
-      tournamentName: nextMatch.tournamentName,
-      leagueName: nextMatch.leagueName,
-      leagueImage: nextMatch.leagueImage || undefined,
-      serieName: nextMatch.serieName,
-      numberOfGames: nextMatch.numberOfGames,
-      beginAt: nextMatch.beginAt,
-    });
+    let embed;
+    try {
+      embed = await createMatchEmbed({
+        kcTeam: nextMatch.kcTeam,
+        kcId: nextMatch.kcId,
+        opponent: nextMatch.opponent,
+        opponentImage: nextMatch.opponentImage || undefined,
+        tournamentName: nextMatch.tournamentName,
+        leagueName: nextMatch.leagueName,
+        leagueImage: nextMatch.leagueImage || undefined,
+        serieName: nextMatch.serieName,
+        numberOfGames: nextMatch.numberOfGames,
+        beginAt: nextMatch.beginAt,
+      });
+    } catch (embedError) {
+      logger.error("Error creating match embed:", embedError);
+      await interaction.editReply(
+        "Erreur lors de la création de l'affichage du match."
+      );
+      return;
+    }
 
     // Create select menu for team selection
     const menuOptions = [
@@ -170,9 +198,11 @@ export async function execute(interaction: CommandInteraction) {
     // Check if interaction is still valid and handle accordingly
     try {
       if (!interaction.replied && !interaction.deferred) {
-        await interaction.reply(
-          "Une erreur est survenue lors de la récupération du prochain match."
-        );
+        await interaction.reply({
+          content:
+            "Une erreur est survenue lors de la récupération du prochain match.",
+          ephemeral: true,
+        });
       } else if (interaction.deferred) {
         await interaction.editReply(
           "Une erreur est survenue lors de la récupération du prochain match."
