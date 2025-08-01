@@ -1,5 +1,10 @@
 import { PrismaClient } from "@prisma/client";
-import { Client, GatewayIntentBits, TextChannel } from "discord.js";
+import {
+  Client,
+  GatewayIntentBits,
+  TextChannel,
+  ChannelType,
+} from "discord.js";
 import { createMatchEmbed } from "../utils/embedBuilder";
 import { logger } from "../utils/logger";
 import dotenv from "dotenv";
@@ -130,13 +135,12 @@ async function checkUpcomingMatches() {
     const now = new Date();
 
     // Find matches that start in the next 30-35 minutes (to account for cron frequency)
-    const thirtyMinutesFromNow = new Date(now.getTime() + 30 * 60 * 1000);
+    const thirtyMinutesFromNow = new Date(now.getTime() + 29 * 60 * 1000);
     const thirtyFiveMinutesFromNow = new Date(now.getTime() + 35 * 60 * 1000);
 
     // Initialize Prisma with retry
     await withRetry(async () => {
       prismaClient = getPrismaClient();
-      // Test connection
       await prismaClient.$queryRaw`SELECT 1`;
       logger.info("✅ Database connection established");
     });
@@ -275,18 +279,31 @@ async function sendNotificationForMatch(match: any, guildSettings: any[]) {
               return;
             }
 
+            // Force refresh the guild to get latest channel data
+            try {
+              await guild.fetch();
+            } catch (error) {
+              logger.warn(`Failed to fetch guild ${setting.guildId}:`, error);
+            }
+
             const channel = guild.channels.cache.get(
               setting.channelId
             ) as TextChannel;
             if (!channel) {
+              // Log available channels for debugging
+              const availableChannels = guild.channels.cache
+                .filter((ch) => ch.type === ChannelType.GuildText)
+                .map((ch) => `${ch.name} (${ch.id})`)
+                .join(", ");
+
               logger.warn(
-                `Channel ${setting.channelId} not found in guild ${setting.guildId}`
+                `Channel ${setting.channelId} not found in guild ${setting.guildId}. Available text channels: ${availableChannels}`
               );
               return;
             }
 
             // Send the notification with timeout
-            const message = `⏰ **Match dans 30 minutes !** ⏰\n${setting.customMessage}`;
+            const message = `⏰ **Match dans 30 minutes !** ⏰`;
 
             await Promise.race([
               channel.send({
