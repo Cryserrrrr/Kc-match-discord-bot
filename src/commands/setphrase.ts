@@ -28,7 +28,6 @@ export async function execute(interaction: CommandInteraction) {
     );
     const guildId = interaction.guildId!;
 
-    // Check if guild has settings
     const existingSettings = await prisma.guildSettings.findUnique({
       where: { guildId },
     });
@@ -42,7 +41,6 @@ export async function execute(interaction: CommandInteraction) {
       return;
     }
 
-    // Update the custom message
     await prisma.guildSettings.update({
       where: { guildId },
       data: { customMessage },

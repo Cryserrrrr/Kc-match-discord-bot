@@ -18,10 +18,9 @@ export async function loadCommands(client: Client) {
   const commands: SlashCommandBuilder[] = [];
   const commandsPath = join(__dirname);
 
-  // Load command files
   const commandFiles = readdirSync(commandsPath)
     .filter((file) => file.endsWith(".js") || file.endsWith(".ts"))
-    .filter((file) => !file.endsWith(".d.ts")) // Exclude TypeScript declaration files
+    .filter((file) => !file.endsWith(".d.ts"))
     .filter(
       (file) => file !== "commandLoader.js" && file !== "commandLoader.ts"
     );
@@ -43,7 +42,6 @@ export async function loadCommands(client: Client) {
     }
   }
 
-  // Register commands with Discord
   if (commands.length > 0) {
     try {
       const rest = new REST({ version: "10" }).setToken(

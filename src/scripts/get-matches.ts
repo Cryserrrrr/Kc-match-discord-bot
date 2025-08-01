@@ -4,17 +4,12 @@ import { PrismaClient } from "@prisma/client";
 import { PandaScoreService } from "../services/pandascore";
 import { config } from "dotenv";
 
-// Load environment variables
 config();
 
-// Retry configuration
 const MAX_RETRIES = 5;
-const INITIAL_DELAY = 2000; // 2 seconds
-const MAX_DELAY = 60000; // 60 seconds
+const INITIAL_DELAY = 2000;
+const MAX_DELAY = 60000;
 
-/**
- * Retry function with exponential backoff
- */
 async function withRetry<T>(
   fn: () => Promise<T>,
   maxRetries: number = MAX_RETRIES,
@@ -42,7 +37,6 @@ async function withRetry<T>(
       console.log(`⏳ Retrying in ${delay}ms...`);
       await new Promise((resolve) => setTimeout(resolve, delay));
 
-      // Exponential backoff with max delay
       delay = Math.min(delay * 2, MAX_DELAY);
     }
   }
@@ -56,10 +50,8 @@ async function main() {
   let prisma: PrismaClient | null = null;
 
   try {
-    // Initialize Prisma with retry
     await withRetry(async () => {
       prisma = new PrismaClient();
-      // Test connection
       await prisma.$queryRaw`SELECT 1`;
       console.log("✅ Database connection established");
     });
@@ -78,7 +70,6 @@ async function main() {
     );
     process.exit(1);
   } finally {
-    // Cleanup
     try {
       if (prisma) {
         await (prisma as PrismaClient).$disconnect();

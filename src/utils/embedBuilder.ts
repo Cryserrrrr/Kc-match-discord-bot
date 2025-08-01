@@ -21,7 +21,6 @@ export async function createMatchEmbed(
   const tomorrow = new Date(today);
   tomorrow.setDate(tomorrow.getDate() + 1);
 
-  // Format the date
   let dateString: string;
   const matchDate = matchTime.toDateString();
   const todayDate = today.toDateString();
@@ -45,10 +44,8 @@ export async function createMatchEmbed(
     timeZone: "Europe/Paris",
   });
 
-  // Determine color based on team name
   const embedColor = getEmbedColor(match.kcId);
 
-  // KC logo URL
   const kcLogoUrl =
     "https://cdn.pandascore.co/images/team/image/136165/karmine_corplogo_square.png";
 
@@ -75,23 +72,19 @@ export async function createMatchEmbed(
 }
 
 function getEmbedColor(kcId: string): number {
-  // League of Legends teams
   if (kcId === "134078" || kcId === "128268" || kcId === "136080") {
-    return 0x1e90ff; // Dodger Blue for LoL
+    return 0x1e90ff;
   }
 
-  // Valorant teams
   if (kcId === "130922" || kcId === "132777" || kcId === "136165") {
-    return 0xff4655; // Valorant Red
+    return 0xff4655;
   }
 
-  // Rocket League teams
   if (kcId === "129570") {
-    return 0xffa500; // Orange for Rocket League
+    return 0xffa500;
   }
 
-  // Default color for unknown teams
-  return 0x00ff00; // Green
+  return 0x00ff00;
 }
 
 export function createErrorEmbed(message: string): EmbedBuilder {

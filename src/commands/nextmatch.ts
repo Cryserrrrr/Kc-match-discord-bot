@@ -32,7 +32,6 @@ export const data = new SlashCommandBuilder()
 
 export async function execute(interaction: CommandInteraction) {
   try {
-    // Defer the reply immediately to prevent timeout
     if (!interaction.deferred && !interaction.replied) {
       await interaction.deferReply();
     }
@@ -40,7 +39,6 @@ export async function execute(interaction: CommandInteraction) {
     const selectedTeam =
       (interaction as any).options?.getString("team") || "all";
 
-    // Get guild settings to check team filters
     const guildId = interaction.guildId!;
     let guildSettings;
 
@@ -58,24 +56,20 @@ export async function execute(interaction: CommandInteraction) {
 
     const filteredTeams = (guildSettings as any)?.filteredTeams || [];
 
-    // Build the where clause based on team selection
     const whereClause: any = {
       beginAt: {
         gte: new Date(),
       },
     };
 
-    // If a specific team is selected, filter by that team
     if (selectedTeam !== "all") {
       whereClause.kcId = selectedTeam;
     } else if (filteredTeams.length > 0) {
-      // If no specific team is selected but there are filtered teams, use the filter
       whereClause.kcId = {
         in: filteredTeams,
       };
     }
 
-    // Find the next match
     let nextMatch;
     try {
       nextMatch = await prisma.match.findFirst({
@@ -112,7 +106,6 @@ export async function execute(interaction: CommandInteraction) {
       return;
     }
 
-    // Create embed using the utility function
     let embed;
     try {
       embed = await createMatchEmbed({

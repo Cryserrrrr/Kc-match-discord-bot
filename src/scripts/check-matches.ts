@@ -5,17 +5,12 @@ import { Client, GatewayIntentBits, TextChannel } from "discord.js";
 import { config } from "dotenv";
 import { createMatchEmbed } from "../utils/embedBuilder";
 
-// Load environment variables
 config();
 
-// Retry configuration
 const MAX_RETRIES = 5;
-const INITIAL_DELAY = 2000; // 2 seconds
-const MAX_DELAY = 60000; // 60 seconds
+const INITIAL_DELAY = 2000;
+const MAX_DELAY = 60000;
 
-/**
- * Retry function with exponential backoff
- */
 async function withRetry<T>(
   fn: () => Promise<T>,
   maxRetries: number = MAX_RETRIES,
@@ -43,7 +38,6 @@ async function withRetry<T>(
       console.log(`⏳ Retrying in ${delay}ms...`);
       await new Promise((resolve) => setTimeout(resolve, delay));
 
-      // Exponential backoff with max delay
       delay = Math.min(delay * 2, MAX_DELAY);
     }
   }
@@ -58,21 +52,17 @@ async function main() {
   let client: Client | null = null;
 
   try {
-    // Initialize Prisma with retry
     await withRetry(async () => {
       prisma = new PrismaClient();
-      // Test connection
       await prisma.$queryRaw`SELECT 1`;
       console.log("✅ Database connection established");
     });
 
-    // Create Discord client with retry
     await withRetry(async () => {
       client = new Client({
         intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages],
       });
 
-      // Login to Discord with timeout
       const loginPromise = client.login(process.env.DISCORD_TOKEN);
       const timeoutPromise = new Promise((_, reject) =>
         setTimeout(() => reject(new Error("Discord login timeout")), 30000)
@@ -80,7 +70,6 @@ async function main() {
 
       await Promise.race([loginPromise, timeoutPromise]);
 
-      // Wait for client to be ready with timeout
       await new Promise<void>((resolve, reject) => {
         const timeout = setTimeout(() => {
           reject(new Error("Client ready timeout"));

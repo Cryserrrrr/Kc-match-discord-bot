@@ -1,7 +1,6 @@
 import axios from "axios";
 import { logger } from "../utils/logger";
 
-// Karmine Corp team IDs by game
 const TEAM_IDS = {
   LOL: {
     KC: "134078",
@@ -67,7 +66,7 @@ export class PandaScoreService {
           Accept: "application/json",
         },
         params,
-        timeout: 30000, // 30 second timeout
+        timeout: 30000,
       });
       return response.data;
     } catch (error: any) {
@@ -103,7 +102,6 @@ export class PandaScoreService {
   }
 
   async getKarmineCorpMatches(date: string): Promise<PandaScoreMatch[]> {
-    // Get all KC team IDs
     const kcTeamIds = [
       TEAM_IDS.LOL.KC,
       TEAM_IDS.LOL.KCB,
@@ -117,7 +115,6 @@ export class PandaScoreService {
     try {
       logger.info(`Fetching matches for KC teams: ${kcTeamIds.join(", ")}`);
 
-      // Fetch upcoming matches for all KC teams
       const matches = await this.makeRequest("/matches/upcoming", {
         "filter[opponent_id]": kcTeamIds.join(","),
         sort: "begin_at",
@@ -125,7 +122,6 @@ export class PandaScoreService {
         page: 1,
       });
 
-      // Filter matches to only include those with Karmine Corp teams
       const karmineMatches = matches.filter((match: PandaScoreMatch) =>
         match.opponents.some((opponent) =>
           kcTeamIds.includes(opponent.opponent.id.toString())
@@ -138,7 +134,7 @@ export class PandaScoreService {
       return karmineMatches;
     } catch (error) {
       logger.error("Error fetching Karmine Corp matches:", error);
-      throw error; // Re-throw to let caller handle it
+      throw error;
     }
   }
 
@@ -162,7 +158,6 @@ export class PandaScoreService {
       TEAM_IDS.RL.KC,
     ];
 
-    // Find the KC team in the match
     const kcTeam = match.opponents.find((opponent) =>
       kcTeamIds.includes(opponent.opponent.id.toString())
     );
@@ -187,7 +182,6 @@ export class PandaScoreService {
       TEAM_IDS.RL.KC,
     ];
 
-    // Find the opponent that is NOT a KC team
     const opponent = match.opponents.find(
       (opponent) => !kcTeamIds.includes(opponent.opponent.id.toString())
     );

@@ -33,12 +33,10 @@ export async function execute(interaction: CommandInteraction) {
   try {
     const guildId = interaction.guildId!;
 
-    // Get current guild settings
     let guildSettings = await prisma.guildSettings.findUnique({
       where: { guildId },
     });
 
-    // Create main menu embed
     const mainEmbed = new EmbedBuilder()
       .setTitle("⚙️ Configuration du Bot Karmine Corp")
       .setDescription(
@@ -47,7 +45,6 @@ export async function execute(interaction: CommandInteraction) {
       .setColor(0x0099ff)
       .setFooter({ text: "Configuration du serveur" });
 
-    // Add current settings to embed
     if (guildSettings) {
       const channelMention = guildSettings.channelId
         ? `<#${guildSettings.channelId}>`
@@ -89,7 +86,6 @@ export async function execute(interaction: CommandInteraction) {
       });
     }
 
-    // Create main menu
     const mainMenu = new StringSelectMenuBuilder()
       .setCustomId("main_menu")
       .setPlaceholder("Sélectionnez une option de configuration")
@@ -119,15 +115,13 @@ export async function execute(interaction: CommandInteraction) {
     const mainRow =
       new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(mainMenu);
 
-    // Send initial embed
     await interaction.editReply({
       embeds: [mainEmbed],
       components: [mainRow],
     });
 
-    // Create collector for interactions on the channel
     const collector = interaction.channel!.createMessageComponentCollector({
-      time: 300000, // 5 minutes
+      time: 300000,
       filter: (i) => i.user.id === interaction.user.id,
     });
 
@@ -161,8 +155,6 @@ export async function execute(interaction: CommandInteraction) {
     });
 
     collector.on("end", async () => {
-      // Simply log that the collector expired - no need to edit the message
-      // as it can cause issues with component limits
       logger.info(
         "Config menu collector expired for user:",
         interaction.user.id

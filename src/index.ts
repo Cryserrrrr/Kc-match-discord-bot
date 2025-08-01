@@ -39,7 +39,6 @@ client.on("interactionCreate", async (interaction) => {
     if (!command) return;
 
     try {
-      // Defer reply immediately to prevent timeout
       await safeInteractionDefer(interaction);
 
       await command.execute(interaction);
@@ -60,7 +59,6 @@ client.on("interactionCreate", async (interaction) => {
     interaction.customId === "team_select"
   ) {
     try {
-      // Defer reply immediately to prevent timeout
       await safeInteractionDefer(interaction);
 
       await handleTeamSelect(interaction);
@@ -177,13 +175,11 @@ process.on("SIGTERM", async () => {
   process.exit(0);
 });
 
-// Handle uncaught exceptions
 process.on("uncaughtException", (error) => {
   logger.error("Uncaught Exception:", error);
   process.exit(1);
 });
 
-// Handle unhandled promise rejections
 process.on("unhandledRejection", (reason, promise) => {
   logger.error("Unhandled Rejection at:", promise, "reason:", reason);
   process.exit(1);

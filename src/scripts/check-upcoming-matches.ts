@@ -9,17 +9,12 @@ import { createMatchEmbed } from "../utils/embedBuilder";
 import { logger } from "../utils/logger";
 import dotenv from "dotenv";
 
-// Load environment variables
 dotenv.config();
 
-// Retry configuration
 const MAX_RETRIES = 5;
-const INITIAL_DELAY = 2000; // 2 seconds
-const MAX_DELAY = 60000; // 60 seconds
+const INITIAL_DELAY = 2000;
+const MAX_DELAY = 60000;
 
-/**
- * Retry function with exponential backoff
- */
 async function withRetry<T>(
   fn: () => Promise<T>,
   maxRetries: number = MAX_RETRIES,
@@ -47,7 +42,6 @@ async function withRetry<T>(
       logger.info(`⏳ Retrying in ${delay}ms...`);
       await new Promise((resolve) => setTimeout(resolve, delay));
 
-      // Exponential backoff with max delay
       delay = Math.min(delay * 2, MAX_DELAY);
     }
   }
@@ -55,17 +49,14 @@ async function withRetry<T>(
   throw lastError!;
 }
 
-// Global instances with connection pooling
 let prisma: PrismaClient | null = null;
 let client: Client | null = null;
 let isClientReady = false;
 
-// Cache for guild settings to avoid repeated database queries
 let guildSettingsCache: any[] | null = null;
 let lastCacheUpdate = 0;
-const CACHE_DURATION = 5 * 60 * 1000; // 5 minutes
+const CACHE_DURATION = 5 * 60 * 1000;
 
-// Initialize Prisma with connection pooling
 function getPrismaClient(): PrismaClient {
   if (!prisma) {
     prisma = new PrismaClient({
@@ -74,14 +65,12 @@ function getPrismaClient(): PrismaClient {
           url: process.env.DATABASE_URL,
         },
       },
-      // Optimize for frequent short-lived connections
       log: ["error", "warn"],
     });
   }
   return prisma;
 }
 
-// Initialize Discord client with connection reuse
 async function getDiscordClient(): Promise<Client> {
   if (!client) {
     client = new Client({
@@ -105,7 +94,6 @@ async function getDiscordClient(): Promise<Client> {
   return client;
 }
 
-// Cache guild settings to avoid repeated database queries
 async function getGuildSettings(): Promise<any[]> {
   const now = Date.now();
 
@@ -145,7 +133,6 @@ async function checkUpcomingMatches() {
       logger.info("✅ Database connection established");
     });
 
-    // Optimized query with specific field selection
     const upcomingMatches = await withRetry(async () => {
       if (!prismaClient) throw new Error("Prisma client not initialized");
 
@@ -184,7 +171,6 @@ async function checkUpcomingMatches() {
       return;
     }
 
-    // Get guild settings once and reuse
     const guildSettings = await withRetry(async () => {
       return await getGuildSettings();
     });
@@ -194,7 +180,6 @@ async function checkUpcomingMatches() {
       return;
     }
 
-    // Process matches in parallel for better performance
     const notificationPromises = upcomingMatches.map((match) =>
       sendNotificationForMatch(match, guildSettings)
     );
@@ -209,8 +194,6 @@ async function checkUpcomingMatches() {
     logger.error("💥 CRITICAL ERROR - Script failed after all retries:", error);
     throw error;
   } finally {
-    // Don't disconnect Prisma client to keep connection pool alive
-    // Only destroy Discord client if it exists
     if (client && isClientReady) {
       try {
         await client.destroy();
@@ -229,12 +212,10 @@ async function sendNotificationForMatch(match: any, guildSettings: any[]) {
       `Sending 30-minute notification for match ${match.id} (${match.kcTeam} vs ${match.opponent})`
     );
 
-    // Get Discord client with retry
     const discordClient = await withRetry(async () => {
       return await getDiscordClient();
     });
 
-    // Create embed for the match
     const embed = await withRetry(async () => {
       return await createMatchEmbed({
         kcTeam: match.kcTeam,
@@ -250,12 +231,10 @@ async function sendNotificationForMatch(match: any, guildSettings: any[]) {
       });
     });
 
-    // Send notification to all configured channels in parallel
     const channelPromises = guildSettings.map(async (setting) => {
       await withRetry(
         async () => {
           try {
-            // Check if pre-match notifications are enabled for this guild
             if (!setting.enablePreMatchNotifications) {
               logger.debug(
                 `Skipping match ${match.id} for guild ${setting.guildId} - pre-match notifications disabled`
@@ -263,7 +242,6 @@ async function sendNotificationForMatch(match: any, guildSettings: any[]) {
               return;
             }
 
-            // Check if this match should be announced based on team filter
             if (setting.filteredTeams && setting.filteredTeams.length > 0) {
               if (!setting.filteredTeams.includes(match.kcId)) {
                 logger.debug(
@@ -279,7 +257,6 @@ async function sendNotificationForMatch(match: any, guildSettings: any[]) {
               return;
             }
 
-            // Force refresh the guild to get latest channel data
             try {
               await guild.fetch();
             } catch (error) {
@@ -290,7 +267,6 @@ async function sendNotificationForMatch(match: any, guildSettings: any[]) {
               setting.channelId
             ) as TextChannel;
             if (!channel) {
-              // Log available channels for debugging
               const availableChannels = guild.channels.cache
                 .filter((ch) => ch.type === ChannelType.GuildText)
                 .map((ch) => `${ch.name} (${ch.id})`)
@@ -302,7 +278,6 @@ async function sendNotificationForMatch(match: any, guildSettings: any[]) {
               return;
             }
 
-            // Send the notification with timeout
             const message = `⏰ **Match dans 30 minutes !** ⏰`;
 
             await Promise.race([
@@ -328,7 +303,7 @@ async function sendNotificationForMatch(match: any, guildSettings: any[]) {
         },
         3,
         1000
-      ); // 3 retries for individual channels, 1 second delay
+      );
     });
 
     await Promise.allSettled(channelPromises);
@@ -338,7 +313,6 @@ async function sendNotificationForMatch(match: any, guildSettings: any[]) {
   }
 }
 
-// Cleanup function for graceful shutdown
 export async function cleanup() {
   if (prisma) {
     await prisma.$disconnect();
@@ -352,11 +326,9 @@ export async function cleanup() {
   guildSettingsCache = null;
 }
 
-// Handle process termination
 process.on("SIGINT", cleanup);
 process.on("SIGTERM", cleanup);
 
-// Run the script if called directly
 if (require.main === module) {
   checkUpcomingMatches()
     .then(async () => {
