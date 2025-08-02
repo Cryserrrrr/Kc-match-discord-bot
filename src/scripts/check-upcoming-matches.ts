@@ -123,7 +123,7 @@ async function checkUpcomingMatches() {
     const now = new Date();
 
     // Find matches that start in the next 30-35 minutes (to account for cron frequency)
-    const thirtyMinutesFromNow = new Date(now.getTime() + 29 * 60 * 1000);
+    const thirtyMinutesFromNow = new Date(now.getTime() + 30 * 60 * 1000);
     const thirtyFiveMinutesFromNow = new Date(now.getTime() + 35 * 60 * 1000);
 
     // Initialize Prisma with retry
