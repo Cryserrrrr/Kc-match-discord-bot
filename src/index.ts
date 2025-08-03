@@ -16,6 +16,7 @@ import {
   safeInteractionReply,
   withTimeout,
 } from "./utils/timeoutUtils";
+import { getStreamingUrl } from "./utils/casters";
 
 config();
 
@@ -158,7 +159,6 @@ async function sendErrorMessage(interaction: any, message: string) {
 }
 
 async function updateBotStatus() {
-  console.log("Updating bot status");
   try {
     const liveMatch = await prisma.match.findFirst({
       where: {
@@ -171,9 +171,25 @@ async function updateBotStatus() {
 
     if (liveMatch) {
       const statusText = `${liveMatch.kcTeam} vs ${liveMatch.opponent}`;
+      const streamingUrl = getStreamingUrl(liveMatch.leagueName);
 
-      client.user?.setActivity(statusText, { type: ActivityType.Watching });
-      logger.debug(`Updated bot status to: Watching ${statusText}`);
+      if (streamingUrl) {
+        client.user?.setActivity(statusText, {
+          type: ActivityType.Streaming,
+          url: streamingUrl,
+        });
+        logger.debug(
+          `Updated bot status to: Streaming ${statusText} on ${streamingUrl}`
+        );
+      } else {
+        client.user?.setActivity(statusText, {
+          type: ActivityType.Streaming,
+          url: "https://www.twitch.tv/kamet0",
+        });
+        logger.debug(
+          `Updated bot status to: Streaming ${statusText} (no streaming URL found)`
+        );
+      }
     } else {
       client.user?.setPresence({ activities: [] });
       logger.debug("Cleared bot status - no live matches");
