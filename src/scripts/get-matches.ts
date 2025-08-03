@@ -132,6 +132,7 @@ async function checkAndSaveMatches(prisma: PrismaClient) {
                   tournamentName: match.tournament.name,
                   numberOfGames: match.number_of_games,
                   beginAt: new Date(match.scheduled_at),
+                  status: "scheduled",
                 },
               });
 
@@ -152,9 +153,102 @@ async function checkAndSaveMatches(prisma: PrismaClient) {
         1000
       ); // 3 retries for individual matches, 1 second delay
     }
+
+    // Check for live matches and update scores
+    await checkLiveMatchesAndUpdateScores(prisma, pandaScoreService);
   } catch (error) {
     console.error("❌ Error checking matches:", error);
     throw error;
+  }
+}
+
+async function checkLiveMatchesAndUpdateScores(
+  prisma: PrismaClient,
+  pandaScoreService: PandaScoreService
+) {
+  try {
+    console.log("🔍 Checking for live matches and updating scores...");
+
+    // Get matches that are scheduled or live
+    const activeMatches = await prisma.match.findMany({
+      where: {
+        status: {
+          in: ["scheduled", "live"],
+        },
+        beginAt: {
+          lte: new Date(),
+        },
+      },
+    });
+
+    if (activeMatches.length === 0) {
+      console.log("📭 No active matches found");
+      return;
+    }
+
+    console.log(`📊 Found ${activeMatches.length} active matches to check`);
+
+    // Check each active match
+    for (const dbMatch of activeMatches) {
+      await withRetry(
+        async () => {
+          try {
+            // Fetch current match data from PandaScore
+            const currentMatch = await pandaScoreService.getMatchById(
+              parseInt(dbMatch.id)
+            );
+
+            if (!currentMatch) {
+              console.log(`⚠️  Match ${dbMatch.id} not found in PandaScore`);
+              return;
+            }
+
+            let status = dbMatch.status;
+            let score = dbMatch.score;
+
+            // Update status based on match state
+            if (currentMatch.status === "running") {
+              status = "live";
+            } else if (currentMatch.status === "finished") {
+              status = "finished";
+              // Get score if match is finished
+              const matchScore = pandaScoreService.getMatchScore(currentMatch);
+              if (matchScore) {
+                score = matchScore;
+                console.log(
+                  `🏆 Match ${dbMatch.id} finished with score: ${matchScore}`
+                );
+              }
+            }
+
+            // Update match in database if there are changes
+            if (status !== dbMatch.status || score !== dbMatch.score) {
+              await prisma.match.update({
+                where: { id: dbMatch.id },
+                data: {
+                  status: status,
+                  score: score,
+                },
+              });
+
+              console.log(
+                `✅ Updated match ${dbMatch.id}: status=${status}, score=${
+                  score || "N/A"
+                }`
+              );
+            }
+          } catch (matchError) {
+            console.error(`❌ Error checking match ${dbMatch.id}:`, matchError);
+            // Don't throw here to avoid stopping the entire process
+          }
+        },
+        2,
+        1000
+      );
+    }
+  } catch (error) {
+    console.error("❌ Error checking live matches:", error);
+    // Don't throw here to avoid stopping the main match fetching process
   }
 }
 

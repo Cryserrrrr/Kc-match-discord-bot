@@ -54,6 +54,10 @@ export async function execute(interaction: CommandInteraction) {
       const prematchEnabled = (guildSettings as any).enablePreMatchNotifications
         ? "✅ Activé"
         : "❌ Désactivé";
+      const scoreEnabled =
+        (guildSettings as any).enableScoreNotifications !== false
+          ? "✅ Activé"
+          : "❌ Désactivé";
       const filteredTeams = (guildSettings as any).filteredTeams || [];
       const teamsStatus =
         filteredTeams.length === 0
@@ -73,6 +77,11 @@ export async function execute(interaction: CommandInteraction) {
         {
           name: "🔔 Notifications avant-match",
           value: prematchEnabled,
+          inline: true,
+        },
+        {
+          name: "🏆 Notifications de score",
+          value: scoreEnabled,
           inline: true,
         },
         { name: "🏆 Filtre d'équipes", value: teamsStatus, inline: true }
@@ -109,7 +118,14 @@ export async function execute(interaction: CommandInteraction) {
           .setLabel("🔔 Notifications avant-match")
           .setDescription("Activer/désactiver les notifications 30min avant")
           .setValue("prematch")
-          .setEmoji("🔔")
+          .setEmoji("🔔"),
+        new StringSelectMenuOptionBuilder()
+          .setLabel("🏆 Notifications de score")
+          .setDescription(
+            "Activer/désactiver les notifications de fin de match"
+          )
+          .setValue("score")
+          .setEmoji("🏆")
       );
 
     const mainRow =
@@ -151,6 +167,10 @@ export async function execute(interaction: CommandInteraction) {
         await handlePrematchToggle(i, guildId, true);
       } else if (customId === "prematch_disable") {
         await handlePrematchToggle(i, guildId, false);
+      } else if (customId === "score_enable") {
+        await handleScoreToggle(i, guildId, true);
+      } else if (customId === "score_disable") {
+        await handleScoreToggle(i, guildId, false);
       }
     });
 
@@ -186,6 +206,9 @@ async function handleMainMenuSelection(
       break;
     case "prematch":
       await showPrematchConfig(interaction, guildSettings);
+      break;
+    case "score":
+      await showScoreConfig(interaction, guildSettings);
       break;
   }
 }
@@ -473,6 +496,48 @@ async function showPrematchConfig(interaction: any, guildSettings: any) {
   });
 }
 
+async function showScoreConfig(interaction: any, guildSettings: any) {
+  const scoreEnabled =
+    (guildSettings as any)?.enableScoreNotifications !== false;
+
+  const embed = new EmbedBuilder()
+    .setTitle("🏆 Configuration des Notifications de Score")
+    .setDescription(
+      "Les notifications de score sont envoyées à la fin de chaque match avec le résultat.\n\n" +
+        "**État actuel :** " +
+        (scoreEnabled ? "✅ Activé" : "❌ Désactivé")
+    )
+    .setColor(scoreEnabled ? 0x00ff00 : 0xff0000);
+
+  const enableButton = new ButtonBuilder()
+    .setCustomId("score_enable")
+    .setLabel("✅ Activer")
+    .setStyle(ButtonStyle.Success)
+    .setDisabled(scoreEnabled);
+
+  const disableButton = new ButtonBuilder()
+    .setCustomId("score_disable")
+    .setLabel("❌ Désactiver")
+    .setStyle(ButtonStyle.Danger)
+    .setDisabled(!scoreEnabled);
+
+  const backButton = new ButtonBuilder()
+    .setCustomId("back_to_main")
+    .setLabel("← Retour au menu principal")
+    .setStyle(ButtonStyle.Secondary);
+
+  const row = new ActionRowBuilder<ButtonBuilder>().addComponents(
+    enableButton,
+    disableButton,
+    backButton
+  );
+
+  await interaction.update({
+    embeds: [embed],
+    components: [row],
+  });
+}
+
 async function showMainMenu(interaction: any, guildId: string) {
   // Refresh guild settings
   const guildSettings = await prisma.guildSettings.findUnique({
@@ -496,6 +561,10 @@ async function showMainMenu(interaction: any, guildId: string) {
     const prematchEnabled = (guildSettings as any).enablePreMatchNotifications
       ? "✅ Activé"
       : "❌ Désactivé";
+    const scoreEnabled =
+      (guildSettings as any).enableScoreNotifications !== false
+        ? "✅ Activé"
+        : "❌ Désactivé";
     const filteredTeams = (guildSettings as any).filteredTeams || [];
     const teamsStatus =
       filteredTeams.length === 0
@@ -515,6 +584,11 @@ async function showMainMenu(interaction: any, guildId: string) {
       {
         name: "🔔 Notifications avant-match",
         value: prematchEnabled,
+        inline: true,
+      },
+      {
+        name: "🏆 Notifications de score",
+        value: scoreEnabled,
         inline: true,
       },
       { name: "🏆 Filtre d'équipes", value: teamsStatus, inline: true }
@@ -551,7 +625,12 @@ async function showMainMenu(interaction: any, guildId: string) {
         .setLabel("🔔 Notifications avant-match")
         .setDescription("Activer/désactiver les notifications 30min avant")
         .setValue("prematch")
-        .setEmoji("🔔")
+        .setEmoji("🔔"),
+      new StringSelectMenuOptionBuilder()
+        .setLabel("🏆 Notifications de score")
+        .setDescription("Activer/désactiver les notifications de fin de match")
+        .setValue("score")
+        .setEmoji("🏆")
     );
 
   const mainRow = new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(
@@ -845,5 +924,53 @@ async function handlePrematchToggle(
     `Guild ${guildId} ${
       enabled ? "enabled" : "disabled"
     } pre-match notifications`
+  );
+}
+
+async function handleScoreToggle(
+  interaction: any,
+  guildId: string,
+  enabled: boolean
+) {
+  // TODO: Uncomment after migration is applied
+  // await prisma.guildSettings.update({
+  //   where: { guildId },
+  //   data: { enableScoreNotifications: enabled },
+  // });
+
+  const embed = new EmbedBuilder()
+    .setColor(enabled ? "#00ff00" : "#ff0000")
+    .setTitle("🏆 Configuration des notifications de score")
+    .setDescription(
+      enabled
+        ? "✅ Les notifications de score sont maintenant **activées**"
+        : "❌ Les notifications de score sont maintenant **désactivées**"
+    )
+    .addFields({
+      name: "📋 Détails",
+      value: enabled
+        ? "• Les notifications seront envoyées à la fin de chaque match avec le score"
+        : "• Aucune notification ne sera envoyée à la fin des matchs\n• Les autres notifications restent actives",
+    })
+    .setTimestamp()
+    .setFooter({
+      text: `Configuré par ${interaction.user.tag}`,
+      iconURL: interaction.user.displayAvatarURL(),
+    });
+
+  const backButton = new ButtonBuilder()
+    .setCustomId("back_to_main")
+    .setLabel("← Retour au menu principal")
+    .setStyle(ButtonStyle.Secondary);
+
+  const row = new ActionRowBuilder<ButtonBuilder>().addComponents(backButton);
+
+  await interaction.update({
+    embeds: [embed],
+    components: [row],
+  });
+
+  logger.info(
+    `Guild ${guildId} ${enabled ? "enabled" : "disabled"} score notifications`
   );
 }

@@ -22,6 +22,8 @@ model Match {
   tournamentName  String   // Tournament name
   numberOfGames   Int      // Number of games in the match
   beginAt         DateTime // Match date/time
+  status          String   @default("scheduled") // scheduled, live, finished, announced
+  score           String?  // Match score (e.g., "2-1", "3-0")
   createdAt       DateTime @default(now())
 
   @@map("matches")
@@ -33,6 +35,7 @@ model GuildSettings {
   customMessage              String // Custom message with placeholders {team}, {hour}, {game}
   filteredTeams              String[] @default([]) // Array of team IDs to filter matches
   enablePreMatchNotifications Boolean @default(true) // Enable/disable 30-minute pre-match notifications
+  enableScoreNotifications    Boolean @default(true) // Enable/disable score notifications
 
   @@map("guild_settings")
 } 
