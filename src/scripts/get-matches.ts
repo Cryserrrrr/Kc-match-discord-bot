@@ -3,6 +3,7 @@
 import { PrismaClient } from "@prisma/client";
 import { PandaScoreService } from "../services/pandascore";
 import { config } from "dotenv";
+import { logger } from "../utils/logger";
 
 config();
 
@@ -20,21 +21,19 @@ async function withRetry<T>(
 
   for (let attempt = 1; attempt <= maxRetries; attempt++) {
     try {
-      console.log(`🔄 Attempt ${attempt}/${maxRetries}`);
       return await fn();
     } catch (error) {
       lastError = error as Error;
-      console.error(`❌ Attempt ${attempt} failed:`, error);
+      logger.error(`❌ Attempt ${attempt} failed:`, error);
 
       if (attempt === maxRetries) {
-        console.error(
+        logger.error(
           `💥 All ${maxRetries} attempts failed. Final error:`,
           lastError
         );
         throw lastError;
       }
 
-      console.log(`⏳ Retrying in ${delay}ms...`);
       await new Promise((resolve) => setTimeout(resolve, delay));
 
       delay = Math.min(delay * 2, MAX_DELAY);
@@ -45,29 +44,20 @@ async function withRetry<T>(
 }
 
 async function main() {
-  console.log("🔍 Starting external match check...");
-
   let prisma: PrismaClient | null = null;
 
   try {
     await withRetry(async () => {
       prisma = new PrismaClient();
       await prisma.$queryRaw`SELECT 1`;
-      console.log("✅ Database connection established");
     });
 
-    console.log("🔍 Checking for new matches...");
     if (!prisma) {
       throw new Error("Failed to initialize Prisma client");
     }
     await withRetry(async () => checkAndSaveMatches(prisma!));
-
-    console.log("✅ Match check completed successfully");
   } catch (error) {
-    console.error(
-      "💥 CRITICAL ERROR - Script failed after all retries:",
-      error
-    );
+    logger.error("💥 CRITICAL ERROR - Script failed after all retries:", error);
     process.exit(1);
   } finally {
     try {
@@ -75,7 +65,7 @@ async function main() {
         await (prisma as PrismaClient).$disconnect();
       }
     } catch (cleanupError) {
-      console.error("❌ Error during cleanup:", cleanupError);
+      logger.error("❌ Error during cleanup:", cleanupError);
     }
 
     process.exit(0);
@@ -87,9 +77,6 @@ async function checkAndSaveMatches(prisma: PrismaClient) {
   const today = new Date().toISOString().split("T")[0];
 
   try {
-    console.log(`📅 Fetching matches for date: ${today}`);
-
-    // Fetch matches from PandaScore with retry
     const matches = await withRetry(async () => {
       const matchesPromise = pandaScoreService.getKarmineCorpMatches(today);
       const timeoutPromise = new Promise((_, reject) =>
@@ -99,16 +86,12 @@ async function checkAndSaveMatches(prisma: PrismaClient) {
       return (await Promise.race([matchesPromise, timeoutPromise])) as any[];
     });
 
-    console.log(`📊 Found ${matches.length} matches from PandaScore`);
-
-    // Process matches with individual retry for each
     for (const match of matches) {
       await withRetry(
         async () => {
           try {
             const matchId = match.id.toString();
 
-            // Check if match already exists in database
             let dbMatch = await prisma.match.findUnique({
               where: { id: matchId },
             });
@@ -118,7 +101,6 @@ async function checkAndSaveMatches(prisma: PrismaClient) {
                 pandaScoreService.getOpponentNameAndImage(match);
               const { kcTeam, kcId } = pandaScoreService.getKcTeamAndId(match);
 
-              // Create new match in database
               dbMatch = await prisma.match.create({
                 data: {
                   id: matchId,
@@ -136,11 +118,11 @@ async function checkAndSaveMatches(prisma: PrismaClient) {
                 },
               });
 
-              console.log(
+              logger.info(
                 `✅ New match added to database: ${dbMatch.kcTeam} vs ${dbMatch.opponent}`
               );
             } else {
-              console.log(
+              logger.info(
                 `⏭️  Match already exists: ${dbMatch.kcTeam} vs ${dbMatch.opponent}`
               );
             }
@@ -167,8 +149,6 @@ async function checkLiveMatchesAndUpdateScores(
   pandaScoreService: PandaScoreService
 ) {
   try {
-    console.log("🔍 Checking for live matches and updating scores...");
-
     // Get matches that are scheduled or live
     const activeMatches = await prisma.match.findMany({
       where: {
@@ -182,46 +162,40 @@ async function checkLiveMatchesAndUpdateScores(
     });
 
     if (activeMatches.length === 0) {
-      console.log("📭 No active matches found");
+      logger.info("📭 No active matches found");
       return;
     }
 
-    console.log(`📊 Found ${activeMatches.length} active matches to check`);
+    logger.info(`📊 Found ${activeMatches.length} active matches to check`);
 
-    // Check each active match
     for (const dbMatch of activeMatches) {
       await withRetry(
         async () => {
           try {
-            // Fetch current match data from PandaScore
             const currentMatch = await pandaScoreService.getMatchById(
               parseInt(dbMatch.id)
             );
 
             if (!currentMatch) {
-              console.log(`⚠️  Match ${dbMatch.id} not found in PandaScore`);
               return;
             }
 
             let status = dbMatch.status;
             let score = dbMatch.score;
 
-            // Update status based on match state
             if (currentMatch.status === "running") {
               status = "live";
             } else if (currentMatch.status === "finished") {
               status = "finished";
-              // Get score if match is finished
               const matchScore = pandaScoreService.getMatchScore(currentMatch);
               if (matchScore) {
                 score = matchScore;
-                console.log(
+                logger.info(
                   `🏆 Match ${dbMatch.id} finished with score: ${matchScore}`
                 );
               }
             }
 
-            // Update match in database if there are changes
             if (status !== dbMatch.status || score !== dbMatch.score) {
               await prisma.match.update({
                 where: { id: dbMatch.id },
@@ -231,14 +205,14 @@ async function checkLiveMatchesAndUpdateScores(
                 },
               });
 
-              console.log(
+              logger.info(
                 `✅ Updated match ${dbMatch.id}: status=${status}, score=${
                   score || "N/A"
                 }`
               );
             }
           } catch (matchError) {
-            console.error(`❌ Error checking match ${dbMatch.id}:`, matchError);
+            logger.error(`❌ Error checking match ${dbMatch.id}:`, matchError);
             // Don't throw here to avoid stopping the entire process
           }
         },
@@ -247,7 +221,7 @@ async function checkLiveMatchesAndUpdateScores(
       );
     }
   } catch (error) {
-    console.error("❌ Error checking live matches:", error);
+    logger.error("❌ Error checking live matches:", error);
     // Don't throw here to avoid stopping the main match fetching process
   }
 }

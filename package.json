@@ -8,10 +8,10 @@
     "start": "ts-node scripts/deploy-commands.js && node dist/index.js",
     "dev": "ts-node src/index.ts",
     "deploy-commands": "ts-node scripts/deploy-commands.js",
-    "check-matchs": "ts-node src/scripts/check-matchs.ts",
-    "check-finished": "ts-node src/scripts/check-finished-matchs.ts",
-    "get-matchs": "ts-node src/scripts/get-matchs.ts",
-    "check-upcoming": "ts-node src/scripts/check-upcoming-matchs.ts"
+    "check-matches": "ts-node src/scripts/check-matches.ts",
+    "check-finished": "ts-node src/scripts/check-finished-matches.ts",
+    "get-matches": "ts-node src/scripts/get-matches.ts",
+    "check-upcoming": "ts-node src/scripts/check-upcoming-matches.ts"
   },
   "keywords": [
     "discord",

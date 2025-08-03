@@ -25,7 +25,6 @@ async function withRetry<T>(
 
   for (let attempt = 1; attempt <= maxRetries; attempt++) {
     try {
-      logger.info(`🔄 Attempt ${attempt}/${maxRetries}`);
       return await fn();
     } catch (error) {
       lastError = error as Error;
@@ -105,9 +104,6 @@ async function getGuildSettings(): Promise<any[]> {
   guildSettingsCache = await prismaClient.guildSettings.findMany();
 
   lastCacheUpdate = now;
-  logger.debug(
-    `Updated guild settings cache with ${guildSettingsCache.length} entries`
-  );
 
   return guildSettingsCache;
 }
@@ -117,8 +113,6 @@ async function checkUpcomingMatches() {
   let prismaClient: PrismaClient | null = null;
 
   try {
-    logger.info("Starting check for upcoming matches...");
-
     const now = new Date();
 
     // Find matches that start in the next 30-35 minutes (to account for cron frequency)
@@ -128,7 +122,6 @@ async function checkUpcomingMatches() {
     await withRetry(async () => {
       prismaClient = getPrismaClient();
       await prismaClient.$queryRaw`SELECT 1`;
-      logger.info("✅ Database connection established");
     });
 
     const upcomingMatches = await withRetry(async () => {
@@ -183,11 +176,6 @@ async function checkUpcomingMatches() {
     );
 
     await Promise.allSettled(notificationPromises);
-
-    const executionTime = Date.now() - startTime;
-    logger.info(
-      `Finished checking and sending notifications for upcoming matches in ${executionTime}ms`
-    );
   } catch (error) {
     logger.error("💥 CRITICAL ERROR - Script failed after all retries:", error);
     throw error;
@@ -206,10 +194,6 @@ async function checkUpcomingMatches() {
 
 async function sendNotificationForMatch(match: any, guildSettings: any[]) {
   try {
-    logger.info(
-      `Sending 30-minute notification for match ${match.id} (${match.kcTeam} vs ${match.opponent})`
-    );
-
     const discordClient = await withRetry(async () => {
       return await getDiscordClient();
     });
@@ -234,17 +218,11 @@ async function sendNotificationForMatch(match: any, guildSettings: any[]) {
         async () => {
           try {
             if (!setting.enablePreMatchNotifications) {
-              logger.debug(
-                `Skipping match ${match.id} for guild ${setting.guildId} - pre-match notifications disabled`
-              );
               return;
             }
 
             if (setting.filteredTeams && setting.filteredTeams.length > 0) {
               if (!setting.filteredTeams.includes(match.kcId)) {
-                logger.debug(
-                  `Skipping match ${match.id} for guild ${setting.guildId} - team ${match.kcId} not in filter`
-                );
                 return;
               }
             }
@@ -265,14 +243,6 @@ async function sendNotificationForMatch(match: any, guildSettings: any[]) {
               setting.channelId
             ) as TextChannel;
             if (!channel) {
-              const availableChannels = guild.channels.cache
-                .filter((ch) => ch.type === ChannelType.GuildText)
-                .map((ch) => `${ch.name} (${ch.id})`)
-                .join(", ");
-
-              logger.warn(
-                `Channel ${setting.channelId} not found in guild ${setting.guildId}. Available text channels: ${availableChannels}`
-              );
               return;
             }
 
@@ -287,10 +257,6 @@ async function sendNotificationForMatch(match: any, guildSettings: any[]) {
                 setTimeout(() => reject(new Error("Send timeout")), 10000)
               ),
             ]);
-
-            logger.info(
-              `Sent 30-minute notification for match ${match.id} to channel ${setting.channelId} in guild ${setting.guildId}`
-            );
           } catch (error) {
             logger.error(
               `Error sending notification to guild ${setting.guildId}:`,

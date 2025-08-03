@@ -4,6 +4,7 @@ import { PrismaClient } from "@prisma/client";
 import { Client, GatewayIntentBits, TextChannel } from "discord.js";
 import { config } from "dotenv";
 import { createMatchEmbed } from "../utils/embedBuilder";
+import { logger } from "../utils/logger";
 
 config();
 
@@ -21,7 +22,6 @@ async function withRetry<T>(
 
   for (let attempt = 1; attempt <= maxRetries; attempt++) {
     try {
-      console.log(`🔄 Attempt ${attempt}/${maxRetries}`);
       return await fn();
     } catch (error) {
       lastError = error as Error;
@@ -55,7 +55,6 @@ async function main() {
     await withRetry(async () => {
       prisma = new PrismaClient();
       await prisma.$queryRaw`SELECT 1`;
-      console.log("✅ Database connection established");
     });
 
     await withRetry(async () => {
@@ -83,10 +82,6 @@ async function main() {
       });
     });
 
-    console.log(
-      "🔍 Checking for matches in the next 24 hours from database..."
-    );
-
     // Get matches for next 24 hours from database with retry
     const matches = await withRetry(async () => {
       if (!prisma) throw new Error("Prisma client not initialized");
@@ -94,14 +89,13 @@ async function main() {
     });
 
     if (matches.length === 0) {
-      console.log("📭 No matches found for the next 24 hours in database");
-      // Send "no matches" message to all configured channels with retry
+      logger.info("📭 No matches found for the next 24 hours in database");
       await withRetry(async () => {
         if (!client || !prisma) throw new Error("Clients not initialized");
         await announceNoMatches(client, prisma);
       });
     } else {
-      console.log(
+      logger.info(
         `📅 Found ${matches.length} matches for the next 24 hours in database`
       );
 
@@ -111,16 +105,10 @@ async function main() {
         await announceAllMatches(client, prisma, matches);
       });
     }
-
-    console.log("✅ 24h match check completed successfully");
   } catch (error) {
-    console.error(
-      "💥 CRITICAL ERROR - Script failed after all retries:",
-      error
-    );
+    logger.error("💥 CRITICAL ERROR - Script failed after all retries:", error);
     process.exit(1);
   } finally {
-    // Cleanup
     try {
       if (prisma) {
         await (prisma as PrismaClient).$disconnect();
@@ -129,7 +117,7 @@ async function main() {
         await (client as Client).destroy();
       }
     } catch (cleanupError) {
-      console.error("❌ Error during cleanup:", cleanupError);
+      logger.error("❌ Error during cleanup:", cleanupError);
     }
 
     process.exit(0);
@@ -154,22 +142,9 @@ async function getMatchesNext24Hours(prisma: PrismaClient) {
       },
     });
 
-    console.log(
-      `📊 Found ${matches.length} matches in database for the next 24 hours`
-    );
-
-    // Log each match found
-    matches.forEach((match, index) => {
-      console.log(
-        `${index + 1}. ${match.kcTeam} vs ${match.opponent} - ${new Date(
-          match.beginAt
-        ).toLocaleString("fr-FR")}`
-      );
-    });
-
     return matches;
   } catch (error) {
-    console.error("❌ Error fetching matches from database:", error);
+    logger.error("❌ Error fetching matches from database:", error);
     throw error;
   }
 }
@@ -179,7 +154,7 @@ async function announceNoMatches(client: Client, prisma: PrismaClient) {
     const guildSettings = await prisma.guildSettings.findMany();
 
     if (guildSettings.length === 0) {
-      console.log(
+      logger.info(
         "⚠️  No guild settings found - no channels configured for announcements"
       );
       return;
@@ -194,12 +169,12 @@ async function announceNoMatches(client: Client, prisma: PrismaClient) {
 
             if (channel instanceof TextChannel) {
               await channel.send("🔔 Pas de match aujourd'hui");
-              console.log(
+              logger.info(
                 `✅ Sent "no matches" message in guild ${guild.name}`
               );
             }
           } catch (error) {
-            console.error(
+            logger.error(
               `❌ Failed to send "no matches" message in guild ${settings.guildId}:`,
               error
             );
@@ -208,10 +183,10 @@ async function announceNoMatches(client: Client, prisma: PrismaClient) {
         },
         3,
         1000
-      ); // 3 retries for individual guilds, 1 second delay
+      );
     }
   } catch (error) {
-    console.error("❌ Error sending no matches message:", error);
+    logger.error("❌ Error sending no matches message:", error);
     throw error;
   }
 }
@@ -225,7 +200,7 @@ async function announceAllMatches(
     const guildSettings = await prisma.guildSettings.findMany();
 
     if (guildSettings.length === 0) {
-      console.log(
+      logger.info(
         "⚠️  No guild settings found - no channels configured for announcements"
       );
       return;
@@ -239,10 +214,8 @@ async function announceAllMatches(
             const channel = await guild.channels.fetch(settings.channelId);
 
             if (channel instanceof TextChannel) {
-              // Filter matches based on guild settings
               let filteredMatches = matches;
 
-              // If filteredTeams is not empty, only show matches for those teams
               if (
                 (settings as any).filteredTeams &&
                 (settings as any).filteredTeams.length > 0
@@ -252,19 +225,16 @@ async function announceAllMatches(
                 );
               }
 
-              // If no matches after filtering, skip this guild
               if (filteredMatches.length === 0) {
-                console.log(
+                logger.info(
                   `⏭️  No matches to announce for guild ${guild.name} (filtered)`
                 );
                 await announceNoMatches(client, prisma);
                 return;
               }
 
-              // Send the custom message first
               await channel.send(settings.customMessage);
 
-              // Send each match as an embed
               for (const match of filteredMatches) {
                 await withRetry(
                   async () => {
@@ -284,10 +254,9 @@ async function announceAllMatches(
 
                       await channel.send({ embeds: [embed] });
 
-                      // Small delay between messages to avoid rate limiting
                       await new Promise((resolve) => setTimeout(resolve, 1000));
                     } catch (matchError) {
-                      console.error(
+                      logger.error(
                         `❌ Error sending match ${match.id}:`,
                         matchError
                       );
@@ -296,15 +265,15 @@ async function announceAllMatches(
                   },
                   2,
                   500
-                ); // 2 retries for individual matches, 500ms delay
+                );
               }
 
-              console.log(
+              logger.info(
                 `✅ Successfully announced ${filteredMatches.length} matches in guild ${guild.name}`
               );
             }
           } catch (error) {
-            console.error(
+            logger.error(
               `❌ Failed to announce matches in guild ${settings.guildId}:`,
               error
             );
@@ -313,13 +282,12 @@ async function announceAllMatches(
         },
         3,
         1000
-      ); // 3 retries for individual guilds, 1 second delay
+      );
     }
   } catch (error) {
-    console.error("❌ Error announcing matches:", error);
+    logger.error("❌ Error announcing matches:", error);
     throw error;
   }
 }
 
-// Run the script
 main();

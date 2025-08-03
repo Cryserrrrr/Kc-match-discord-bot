@@ -25,7 +25,6 @@ async function withRetry<T>(
 
   for (let attempt = 1; attempt <= maxRetries; attempt++) {
     try {
-      logger.info(`🔄 Attempt ${attempt}/${maxRetries}`);
       return await fn();
     } catch (error) {
       lastError = error as Error;
@@ -124,8 +123,14 @@ async function checkFinishedMatchesAndSendScoreNotifications() {
     await withRetry(async () => {
       prismaClient = getPrismaClient();
       await prismaClient.$queryRaw`SELECT 1`;
-      logger.info("✅ Database connection established");
     });
+
+    // Connect to Discord once at the beginning
+    const discordClient = await withRetry(async () => {
+      logger.info("🔗 Connecting to Discord...");
+      return await getDiscordClient();
+    });
+    logger.info("✅ Discord connection established");
 
     const finishedMatches = await withRetry(async () => {
       if (!prismaClient) throw new Error("Prisma client not initialized");
@@ -186,9 +191,21 @@ async function checkFinishedMatchesAndSendScoreNotifications() {
       sendScoreNotificationForMatch(
         match,
         guildSettingsWithScoreNotifications,
-        prismaClient!
+        prismaClient!,
+        discordClient
       )
     );
+
+    await prismaClient!.match.updateMany({
+      where: {
+        id: {
+          in: finishedMatches.map((match) => match.id),
+        },
+      },
+      data: {
+        status: "announced",
+      },
+    });
 
     await Promise.allSettled(scoreNotificationPromises);
 
@@ -200,11 +217,13 @@ async function checkFinishedMatchesAndSendScoreNotifications() {
     logger.error("💥 CRITICAL ERROR - Script failed after all retries:", error);
     throw error;
   } finally {
+    // Cleanup Discord client
     if (client && isClientReady) {
       try {
         await client.destroy();
         client = null;
         isClientReady = false;
+        logger.info("✅ Discord client disconnected");
       } catch (error) {
         logger.warn("Error destroying Discord client:", error);
       }
@@ -215,19 +234,10 @@ async function checkFinishedMatchesAndSendScoreNotifications() {
 async function sendScoreNotificationForMatch(
   match: any,
   guildSettings: any[],
-  prismaClient: PrismaClient
+  prismaClient: PrismaClient,
+  discordClient: Client
 ) {
   try {
-    const placeholderScore = "0-0";
-
-    logger.info(
-      `Sending score notification for match ${match.id} (${match.kcTeam} vs ${match.opponent}) - Score: ${placeholderScore}`
-    );
-
-    const discordClient = await withRetry(async () => {
-      return await getDiscordClient();
-    });
-
     const embed = await withRetry(async () => {
       return await createScoreEmbed({
         kcTeam: match.kcTeam,
@@ -240,7 +250,7 @@ async function sendScoreNotificationForMatch(
         serieName: match.serieName,
         numberOfGames: match.numberOfGames,
         beginAt: match.beginAt,
-        score: placeholderScore,
+        score: match.score,
       });
     });
 
@@ -313,13 +323,6 @@ async function sendScoreNotificationForMatch(
     });
 
     await Promise.allSettled(channelPromises);
-
-    await prismaClient.match.update({
-      where: { id: match.id },
-      data: { status: "announced" },
-    });
-
-    logger.info(`Sent score notification for match ${match.id}`);
   } catch (error) {
     logger.error(
       `Error sending score notification for match ${match.id}:`,
@@ -330,16 +333,20 @@ async function sendScoreNotificationForMatch(
 }
 
 export async function cleanup() {
-  if (prisma) {
-    await prisma.$disconnect();
-    prisma = null;
+  try {
+    if (prisma) {
+      await prisma.$disconnect();
+      prisma = null;
+    }
+    if (client && isClientReady) {
+      await client.destroy();
+      client = null;
+      isClientReady = false;
+    }
+    guildSettingsCache = null;
+  } catch (error) {
+    logger.error("Error during cleanup:", error);
   }
-  if (client && isClientReady) {
-    await client.destroy();
-    client = null;
-    isClientReady = false;
-  }
-  guildSettingsCache = null;
 }
 
 process.on("SIGINT", cleanup);
