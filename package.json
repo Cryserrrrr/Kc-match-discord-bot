@@ -8,9 +8,9 @@
     "start": "ts-node scripts/deploy-commands.js && node dist/index.js",
     "dev": "ts-node src/index.ts",
     "deploy-commands": "ts-node scripts/deploy-commands.js",
-    "check-matches": "ts-node src/scripts/check-matchs.ts",
+    "check-matchs": "ts-node src/scripts/check-matchs.ts",
     "check-finished": "ts-node src/scripts/check-finished-matchs.ts",
-    "get-matches": "ts-node src/scripts/get-matchs.ts",
+    "get-matchs": "ts-node src/scripts/get-matchs.ts",
     "check-upcoming": "ts-node src/scripts/check-upcoming-matchs.ts"
   },
   "keywords": [
