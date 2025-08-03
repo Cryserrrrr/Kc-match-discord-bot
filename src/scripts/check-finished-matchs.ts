@@ -121,14 +121,12 @@ async function checkFinishedMatchesAndSendScoreNotifications() {
       "🔍 Starting check for finished matches to send score notifications..."
     );
 
-    // Initialize Prisma with retry
     await withRetry(async () => {
       prismaClient = getPrismaClient();
       await prismaClient.$queryRaw`SELECT 1`;
       logger.info("✅ Database connection established");
     });
 
-    // Find matches that are finished but not yet announced
     const finishedMatches = await withRetry(async () => {
       if (!prismaClient) throw new Error("Prisma client not initialized");
 
@@ -159,17 +157,9 @@ async function checkFinishedMatchesAndSendScoreNotifications() {
       });
     });
 
-    // Filter matches that are likely finished (older than 2 hours)
-    const twoHoursAgo = new Date(Date.now() - 2 * 60 * 60 * 1000);
-    const likelyFinishedMatches = finishedMatches.filter(
-      (match) => match.beginAt < twoHoursAgo
-    );
+    logger.info(`Found ${finishedMatches.length} likely finished matches`);
 
-    logger.info(
-      `Found ${likelyFinishedMatches.length} likely finished matches`
-    );
-
-    if (likelyFinishedMatches.length === 0) {
+    if (finishedMatches.length === 0) {
       logger.info("No finished matches to announce");
       return;
     }
@@ -183,9 +173,8 @@ async function checkFinishedMatchesAndSendScoreNotifications() {
       return;
     }
 
-    // Filter guild settings to only those that have score notifications enabled
     const guildSettingsWithScoreNotifications = guildSettings.filter(
-      (setting) => setting.enableScoreNotifications !== false // Default to true if not set
+      (setting) => setting.enableScoreNotifications !== false
     );
 
     if (guildSettingsWithScoreNotifications.length === 0) {
@@ -193,7 +182,7 @@ async function checkFinishedMatchesAndSendScoreNotifications() {
       return;
     }
 
-    const scoreNotificationPromises = likelyFinishedMatches.map((match) =>
+    const scoreNotificationPromises = finishedMatches.map((match) =>
       sendScoreNotificationForMatch(
         match,
         guildSettingsWithScoreNotifications,
@@ -229,8 +218,7 @@ async function sendScoreNotificationForMatch(
   prismaClient: PrismaClient
 ) {
   try {
-    // For now, use a placeholder score until we can get real scores
-    const placeholderScore = "2-1"; // This will be replaced with real score logic
+    const placeholderScore = "0-0";
 
     logger.info(
       `Sending score notification for match ${match.id} (${match.kcTeam} vs ${match.opponent}) - Score: ${placeholderScore}`
@@ -326,11 +314,10 @@ async function sendScoreNotificationForMatch(
 
     await Promise.allSettled(channelPromises);
 
-    // Mark match as announced (will be available after migration)
-    // await prismaClient.match.update({
-    //   where: { id: match.id },
-    //   data: { status: "announced" },
-    // });
+    await prismaClient.match.update({
+      where: { id: match.id },
+      data: { status: "announced" },
+    });
 
     logger.info(`Sent score notification for match ${match.id}`);
   } catch (error) {

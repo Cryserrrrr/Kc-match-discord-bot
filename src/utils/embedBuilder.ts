@@ -132,9 +132,7 @@ export async function createScoreEmbed(
 
   const embed = new EmbedBuilder()
     .setColor(embedColor)
-    .setTitle(
-      `${resultEmoji} ${match.kcTeam} VS ${match.opponent} ${resultEmoji}`
-    )
+    .setTitle(`${resultEmoji} ${match.kcTeam} VS ${match.opponent}`)
     .setDescription(
       `${match.leagueName} - ${match.serieName} - ${match.tournamentName}`
     )
@@ -144,13 +142,7 @@ export async function createScoreEmbed(
         value: `${resultText} (${match.score})`,
         inline: true,
       },
-      { name: "Date", value: dateString, inline: true },
-      { name: "Heure", value: timeString, inline: true },
-      {
-        name: "Games",
-        value: `Bo${match.numberOfGames.toString()}`,
-        inline: true,
-      },
+      { name: "Date", value: `${dateString} à ${timeString}`, inline: true },
     ])
     .setTimestamp()
     .setFooter({ text: "Karmine Corp Match Bot" })

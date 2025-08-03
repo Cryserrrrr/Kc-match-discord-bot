@@ -5,7 +5,7 @@ import {
   TextChannel,
   ChannelType,
 } from "discord.js";
-import { createMatchEmbed, createScoreEmbed } from "../utils/embedBuilder";
+import { createMatchEmbed } from "../utils/embedBuilder";
 import { logger } from "../utils/logger";
 import dotenv from "dotenv";
 
@@ -119,14 +119,12 @@ async function checkUpcomingMatches() {
   try {
     logger.info("Starting check for upcoming matches...");
 
-    // Get current time
     const now = new Date();
 
     // Find matches that start in the next 30-35 minutes (to account for cron frequency)
     const thirtyMinutesFromNow = new Date(now.getTime() + 30 * 60 * 1000);
     const thirtyFiveMinutesFromNow = new Date(now.getTime() + 35 * 60 * 1000);
 
-    // Initialize Prisma with retry
     await withRetry(async () => {
       prismaClient = getPrismaClient();
       await prismaClient.$queryRaw`SELECT 1`;
