@@ -106,7 +106,7 @@ export class PandaScoreService {
     }
   }
 
-  async getKarmineCorpMatches(date: string): Promise<PandaScoreMatch[]> {
+  async getKarmineCorpMatches(): Promise<PandaScoreMatch[]> {
     const kcTeamIds = [
       TEAM_IDS.LOL.KC,
       TEAM_IDS.LOL.KCB,

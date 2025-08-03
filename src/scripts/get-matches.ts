@@ -74,11 +74,10 @@ async function main() {
 
 async function checkAndSaveMatches(prisma: PrismaClient) {
   const pandaScoreService = new PandaScoreService();
-  const today = new Date().toISOString().split("T")[0];
 
   try {
     const matches = await withRetry(async () => {
-      const matchesPromise = pandaScoreService.getKarmineCorpMatches(today);
+      const matchesPromise = pandaScoreService.getKarmineCorpMatches();
       const timeoutPromise = new Promise((_, reject) =>
         setTimeout(() => reject(new Error("PandaScore API timeout")), 60000)
       );
@@ -127,19 +126,18 @@ async function checkAndSaveMatches(prisma: PrismaClient) {
               );
             }
           } catch (matchError) {
-            console.error(`❌ Error processing match ${match.id}:`, matchError);
+            logger.error(`❌ Error processing match ${match.id}:`, matchError);
             throw matchError; // Re-throw to trigger retry
           }
         },
         3,
         1000
-      ); // 3 retries for individual matches, 1 second delay
+      );
     }
 
-    // Check for live matches and update scores
     await checkLiveMatchesAndUpdateScores(prisma, pandaScoreService);
   } catch (error) {
-    console.error("❌ Error checking matches:", error);
+    logger.error("❌ Error checking matches:", error);
     throw error;
   }
 }

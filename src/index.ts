@@ -1,4 +1,9 @@
-import { Client, GatewayIntentBits, Collection } from "discord.js";
+import {
+  Client,
+  GatewayIntentBits,
+  Collection,
+  ActivityType,
+} from "discord.js";
 import { config } from "dotenv";
 import { PrismaClient } from "@prisma/client";
 import { loadCommands } from "./commands/commandLoader";
@@ -28,6 +33,9 @@ client.once("ready", async () => {
   try {
     await loadCommands(client);
     logger.info("Commands loaded successfully");
+
+    await updateBotStatus();
+    setInterval(updateBotStatus, 5 * 60 * 1000);
   } catch (error) {
     logger.error("Error during bot initialization:", error);
   }
@@ -146,6 +154,32 @@ async function sendErrorMessage(interaction: any, message: string) {
     });
   } catch (error) {
     logger.error("Error sending error message:", error);
+  }
+}
+
+async function updateBotStatus() {
+  console.log("Updating bot status");
+  try {
+    const liveMatch = await prisma.match.findFirst({
+      where: {
+        status: "live",
+      },
+      orderBy: {
+        beginAt: "asc",
+      },
+    });
+
+    if (liveMatch) {
+      const statusText = `${liveMatch.kcTeam} vs ${liveMatch.opponent}`;
+
+      client.user?.setActivity(statusText, { type: ActivityType.Watching });
+      logger.debug(`Updated bot status to: Watching ${statusText}`);
+    } else {
+      client.user?.setPresence({ activities: [] });
+      logger.debug("Cleared bot status - no live matches");
+    }
+  } catch (error) {
+    logger.error("Error updating bot status:", error);
   }
 }
 
