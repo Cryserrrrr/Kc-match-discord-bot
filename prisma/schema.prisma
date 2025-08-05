@@ -32,7 +32,7 @@ model Match {
 model GuildSettings {
   guildId                    String @id
   channelId                  String // Discord channel ID
-  customMessage              String // Custom message with placeholders {team}, {hour}, {game}
+  pingRoles                  String[] @default([]) // Array of role IDs to ping
   filteredTeams              String[] @default([]) // Array of team IDs to filter matches
   enablePreMatchNotifications Boolean @default(true) // Enable/disable 30-minute pre-match notifications
   enableScoreNotifications    Boolean @default(true) // Enable/disable score notifications

@@ -7,6 +7,7 @@ import {
 } from "discord.js";
 import { createScoreEmbed } from "../utils/embedBuilder";
 import { logger } from "../utils/logger";
+import { formatRoleMentions } from "../utils/roleMentions";
 import dotenv from "dotenv";
 
 dotenv.config();
@@ -162,8 +163,6 @@ async function checkFinishedMatchesAndSendScoreNotifications() {
       });
     });
 
-    logger.info(`Found ${finishedMatches.length} likely finished matches`);
-
     if (finishedMatches.length === 0) {
       logger.info("No finished matches to announce");
       return;
@@ -179,7 +178,7 @@ async function checkFinishedMatchesAndSendScoreNotifications() {
     }
 
     const guildSettingsWithScoreNotifications = guildSettings.filter(
-      (setting) => setting.enableScoreNotifications !== false
+      (setting) => setting.enableScoreNotifications === true
     );
 
     if (guildSettingsWithScoreNotifications.length === 0) {
@@ -294,7 +293,13 @@ async function sendScoreNotificationForMatch(
               return;
             }
 
-            const message = `🏆 **Match terminé !** 🏆`;
+            // Create ping message with selected roles
+            const pingRoles = (setting as any).pingRoles || [];
+            const roleMentions = formatRoleMentions(pingRoles);
+            const message =
+              pingRoles.length > 0
+                ? `${roleMentions}\n🏆 **Match terminé !** 🏆`
+                : `🏆 **Match terminé !** 🏆`;
 
             await Promise.race([
               channel.send({

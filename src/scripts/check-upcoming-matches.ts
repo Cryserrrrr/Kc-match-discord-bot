@@ -7,6 +7,7 @@ import {
 } from "discord.js";
 import { createMatchEmbed } from "../utils/embedBuilder";
 import { logger } from "../utils/logger";
+import { formatRoleMentions } from "../utils/roleMentions";
 import dotenv from "dotenv";
 
 dotenv.config();
@@ -246,7 +247,13 @@ async function sendNotificationForMatch(match: any, guildSettings: any[]) {
               return;
             }
 
-            const message = `⏰ **Match dans 30 minutes !** ⏰`;
+            // Create ping message with selected roles
+            const pingRoles = (setting as any).pingRoles || [];
+            const roleMentions = formatRoleMentions(pingRoles);
+            const message =
+              pingRoles.length > 0
+                ? `${roleMentions}\n⏰ **Match dans 30 minutes !** ⏰`
+                : `⏰ **Match dans 30 minutes !** ⏰`;
 
             await Promise.race([
               channel.send({

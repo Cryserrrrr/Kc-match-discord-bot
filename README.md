@@ -19,7 +19,6 @@ A Discord bot that automatically notifies about Karmine Corp matches in League o
 
 - `/nextmatch` - Show the next Karmine Corp match
 - `/config` - Complete bot configuration (server management permissions required)
-- `/setphrase <message>` - Customize the announcement message (server management permissions required)
 
 ### Maintenance Scripts
 
@@ -109,13 +108,13 @@ A Discord bot that automatically notifies about Karmine Corp matches in League o
 
    Then select "📺 Announcement Channel"
 
-2. **Customize the message (optional):**
+2. **Configure roles to ping (optional):**
 
    ```
    /config
    ```
 
-   Then select "💬 Custom Message"
+   Then select "👥 Rôles à mentionner" to choose which roles should be mentioned in announcements.
 
 3. **Filter teams (optional):**
 
@@ -219,7 +218,7 @@ npm run check-upcoming-matches
 
 - `guildId` - Discord guild ID (primary key)
 - `channelId` - Announcement channel ID
-- `customMessage` - Custom announcement message
+- `pingRoles` - Array of role IDs to ping in announcements
 - `filteredTeams` - Array of team IDs to filter matches
 - `enablePreMatchNotifications` - Enable pre-match notifications
 

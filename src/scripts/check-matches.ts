@@ -5,6 +5,7 @@ import { Client, GatewayIntentBits, TextChannel } from "discord.js";
 import { config } from "dotenv";
 import { createMatchEmbed } from "../utils/embedBuilder";
 import { logger } from "../utils/logger";
+import { formatRoleMentions } from "../utils/roleMentions";
 
 config();
 
@@ -100,10 +101,21 @@ async function main() {
       );
 
       // Announce all matches with retry
-      await withRetry(async () => {
+      const hasAnnouncements = await withRetry(async () => {
         if (!client || !prisma) throw new Error("Clients not initialized");
-        await announceAllMatches(client, prisma, matches);
+        return await announceAllMatches(client, prisma, matches);
       });
+
+      // Only send "no matches" message if no guild received any announcements
+      if (!hasAnnouncements) {
+        logger.info(
+          "📭 No guilds received match announcements - sending no matches message"
+        );
+        await withRetry(async () => {
+          if (!client || !prisma) throw new Error("Clients not initialized");
+          await announceNoMatches(client, prisma);
+        });
+      }
     }
   } catch (error) {
     logger.error("💥 CRITICAL ERROR - Script failed after all retries:", error);
@@ -195,7 +207,7 @@ async function announceAllMatches(
   client: Client,
   prisma: PrismaClient,
   matches: any[]
-) {
+): Promise<boolean> {
   try {
     const guildSettings = await prisma.guildSettings.findMany();
 
@@ -203,8 +215,10 @@ async function announceAllMatches(
       logger.info(
         "⚠️  No guild settings found - no channels configured for announcements"
       );
-      return;
+      return false;
     }
+
+    let hasAnnouncements = false;
 
     for (const settings of guildSettings) {
       await withRetry(
@@ -229,11 +243,18 @@ async function announceAllMatches(
                 logger.info(
                   `⏭️  No matches to announce for guild ${guild.name} (filtered)`
                 );
-                await announceNoMatches(client, prisma);
                 return;
               }
 
-              await channel.send(settings.customMessage);
+              // Create ping message with selected roles
+              const pingRoles = (settings as any).pingRoles || [];
+              const roleMentions = formatRoleMentions(pingRoles);
+              const pingMessage =
+                pingRoles.length > 0
+                  ? `${roleMentions} Match du jour !`
+                  : "Match du jour !";
+
+              await channel.send(pingMessage);
 
               for (const match of filteredMatches) {
                 await withRetry(
@@ -271,6 +292,7 @@ async function announceAllMatches(
               logger.info(
                 `✅ Successfully announced ${filteredMatches.length} matches in guild ${guild.name}`
               );
+              hasAnnouncements = true;
             }
           } catch (error) {
             logger.error(
@@ -284,6 +306,8 @@ async function announceAllMatches(
         1000
       );
     }
+
+    return hasAnnouncements;
   } catch (error) {
     logger.error("❌ Error announcing matches:", error);
     throw error;
