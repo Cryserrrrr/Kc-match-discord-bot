@@ -172,8 +172,9 @@ async function announceNoMatches(client: Client, prisma: PrismaClient) {
       return;
     }
 
-    for (const settings of guildSettings) {
-      await withRetry(
+    // Lancer toutes les annonces en parallèle
+    const announcementPromises = guildSettings.map(async (settings) => {
+      return withRetry(
         async () => {
           try {
             const guild = await client.guilds.fetch(settings.guildId);
@@ -196,7 +197,10 @@ async function announceNoMatches(client: Client, prisma: PrismaClient) {
         3,
         1000
       );
-    }
+    });
+
+    // Attendre que toutes les annonces soient terminées
+    await Promise.allSettled(announcementPromises);
   } catch (error) {
     logger.error("❌ Error sending no matches message:", error);
     throw error;
@@ -218,10 +222,9 @@ async function announceAllMatches(
       return false;
     }
 
-    let hasAnnouncements = false;
-
-    for (const settings of guildSettings) {
-      await withRetry(
+    // Lancer toutes les annonces en parallèle
+    const announcementPromises = guildSettings.map(async (settings) => {
+      return withRetry(
         async () => {
           try {
             const guild = await client.guilds.fetch(settings.guildId);
@@ -243,7 +246,7 @@ async function announceAllMatches(
                 logger.info(
                   `⏭️  No matches to announce for guild ${guild.name} (filtered)`
                 );
-                return;
+                return false;
               }
 
               // Create ping message with selected roles
@@ -292,8 +295,9 @@ async function announceAllMatches(
               logger.info(
                 `✅ Successfully announced ${filteredMatches.length} matches in guild ${guild.name}`
               );
-              hasAnnouncements = true;
+              return true;
             }
+            return false;
           } catch (error) {
             logger.error(
               `❌ Failed to announce matches in guild ${settings.guildId}:`,
@@ -305,7 +309,13 @@ async function announceAllMatches(
         3,
         1000
       );
-    }
+    });
+
+    // Attendre que toutes les annonces soient terminées et vérifier si au moins une a réussi
+    const results = await Promise.allSettled(announcementPromises);
+    const hasAnnouncements = results.some(
+      (result) => result.status === "fulfilled" && result.value === true
+    );
 
     return hasAnnouncements;
   } catch (error) {
