@@ -203,6 +203,26 @@ client.on("error", (error) => {
   logger.error("Discord client error:", error);
 });
 
+// Gestionnaire pour quand le bot est supprimé d'un serveur
+client.on("guildDelete", async (guild) => {
+  try {
+    logger.info(`Bot removed from guild: ${guild.name} (${guild.id})`);
+
+    // Supprimer les paramètres du serveur de la base de données
+    await prisma.guildSettings.deleteMany({
+      where: {
+        guildId: guild.id,
+      },
+    });
+
+    logger.info(
+      `Guild settings deleted for guild: ${guild.name} (${guild.id})`
+    );
+  } catch (error) {
+    logger.error(`Error deleting guild settings for guild ${guild.id}:`, error);
+  }
+});
+
 process.on("SIGINT", async () => {
   logger.info("Shutting down bot...");
   try {
