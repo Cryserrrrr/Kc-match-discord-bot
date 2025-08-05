@@ -9,8 +9,6 @@ A Discord bot that automatically notifies about Karmine Corp matches in League o
 - 🎮 **Multi-game support** - League of Legends, Valorant and Rocket League
 - ⚙️ **Complete configuration** - Integrated configuration interface
 - 🏆 **Team filtering** - Choose which teams to announce
-- 💬 **Customizable messages** - Customize announcement messages
-- 🔄 **Robust retry system** - Works even with network issues
 - 📊 **Slash commands** - Modern and intuitive Discord interface
 
 ## 📋 Commands
@@ -141,13 +139,6 @@ A Discord bot that automatically notifies about Karmine Corp matches in League o
 - **KCGC Valorant** - Game Changers Valorant team
 - **KCBS Valorant** - Academy Valorant team
 - **KC Rocket League** - Rocket League team
-
-### Predefined Messages
-
-- `@everyone Match(s) of the day!`
-- `@everyone Today Match(s)!`
-- `🏆 KC Match(s) of the day!`
-- `⚡ Today KC Match(s)!`
 
 ## 🔄 Retry System
 
