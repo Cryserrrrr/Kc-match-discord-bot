@@ -11,7 +11,8 @@
     "check-matches": "ts-node src/scripts/check-matches.ts",
     "check-finished": "ts-node src/scripts/check-finished-matches.ts",
     "get-matches": "ts-node src/scripts/get-matches.ts",
-    "check-upcoming": "ts-node src/scripts/check-upcoming-matches.ts"
+    "check-upcoming": "ts-node src/scripts/check-upcoming-matches.ts",
+    "update-matches": "ts-node src/scripts/update-matches.ts"
   },
   "keywords": [
     "discord",

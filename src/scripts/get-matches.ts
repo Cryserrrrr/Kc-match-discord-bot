@@ -114,6 +114,8 @@ async function checkAndSaveMatches(prisma: PrismaClient) {
                   numberOfGames: match.number_of_games,
                   beginAt: new Date(match.scheduled_at),
                   status: "scheduled",
+                  tournamentId: match.tournament.id,
+                  hasBracket: match.tournament.has_bracket,
                 },
               });
 

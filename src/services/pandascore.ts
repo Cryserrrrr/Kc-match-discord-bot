@@ -42,6 +42,7 @@ export interface PandaScoreMatch {
   };
   tournament: {
     name: string;
+    has_bracket: boolean;
   };
   number_of_games: number;
   tournament_id: number;
@@ -231,6 +232,58 @@ export class PandaScoreService {
       return await this.makeRequest(`/matches/${matchId}`);
     } catch (error) {
       logger.error(`Error fetching match by ID ${matchId}:`, error);
+      throw error;
+    }
+  }
+
+  async getMatch(matchId: string): Promise<any> {
+    try {
+      const match = await this.getMatchById(parseInt(matchId));
+
+      const { kcTeam, kcId } = this.getKcTeamAndId(match);
+      const { opponentName, opponentImage } =
+        this.getOpponentNameAndImage(match);
+
+      return {
+        kcTeam,
+        kcId: kcId.toString(),
+        opponent: opponentName,
+        opponentImage,
+        leagueName: match.league.name,
+        leagueImage: match.league.image_url,
+        serieName: match.serie.full_name,
+        tournamentName: match.tournament.name,
+        tournamentId: match.tournament_id?.toString(),
+        hasBracket: match.tournament.has_bracket,
+        numberOfGames: match.number_of_games,
+        beginAt: new Date(match.scheduled_at),
+      };
+    } catch (error) {
+      logger.error(`Error fetching match ${matchId}:`, error);
+      return null;
+    }
+  }
+
+  async getTournamentStandings(tournamentId: string): Promise<any> {
+    try {
+      return await this.makeRequest(`/tournaments/${tournamentId}/standings`);
+    } catch (error) {
+      logger.error(
+        `Error fetching tournament standings for ${tournamentId}:`,
+        error
+      );
+      throw error;
+    }
+  }
+
+  async getTournamentBrackets(tournamentId: string): Promise<any> {
+    try {
+      return await this.makeRequest(`/tournaments/${tournamentId}/brackets`);
+    } catch (error) {
+      logger.error(
+        `Error fetching tournament brackets for ${tournamentId}:`,
+        error
+      );
       throw error;
     }
   }

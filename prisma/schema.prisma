@@ -20,6 +20,8 @@ model Match {
   leagueImage     String?  // League image URL
   serieName       String   // Serie name
   tournamentName  String   // Tournament name
+  tournamentId    String?  // Tournament ID from PandaScore
+  hasBracket      Boolean  @default(false) // Whether tournament has bracket format
   numberOfGames   Int      // Number of games in the match
   beginAt         DateTime // Match date/time
   status          String   @default("scheduled") // scheduled, live, finished, announced
@@ -27,6 +29,16 @@ model Match {
   createdAt       DateTime @default(now())
 
   @@map("matches")
+}
+
+model StandingCache {
+  id          String @id @default(cuid())
+  tournamentId String // Tournament ID
+  data        String // JSON string of standings/bracket data
+  expiresAt   DateTime // Cache expiration time
+  createdAt   DateTime @default(now())
+
+  @@map("standing_cache")
 }
 
 model GuildSettings {
