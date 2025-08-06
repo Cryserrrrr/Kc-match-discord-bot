@@ -52,7 +52,7 @@ export const data = new SlashCommandBuilder()
     option
       .setName("team")
       .setDescription("Choisir une équipe spécifique de Karmine Corp")
-      .setRequired(false)
+      .setRequired(true)
       .addChoices(
         { name: "KC (LEC)", value: "134078" },
         { name: "KCB (LFL)", value: "128268" },
@@ -66,6 +66,13 @@ export const data = new SlashCommandBuilder()
 
 export async function execute(interaction: any) {
   const selectedTeam = interaction.options.getString("team");
+
+  if (!selectedTeam) {
+    await interaction.editReply({
+      content: "❌ Veuillez sélectionner une équipe pour voir le classement !",
+    });
+    return;
+  }
 
   cleanupObsoleteCache().catch((error) => {
     logger.error("Error cleaning up obsolete cache:", error);
@@ -101,9 +108,7 @@ export async function execute(interaction: any) {
     );
 
     if (!nextMatch && !lastMatch) {
-      const teamText = selectedTeam
-        ? getTeamDisplayName(selectedTeam)
-        : "Karmine Corp";
+      const teamText = getTeamDisplayName(selectedTeam);
       await interaction.editReply({
         content: `Aucun match trouvé pour ${teamText}!`,
       });
