@@ -43,6 +43,7 @@ export interface PandaScoreMatch {
   tournament: {
     name: string;
     has_bracket: boolean;
+    id: number;
   };
   number_of_games: number;
   tournament_id: number;
@@ -253,7 +254,7 @@ export class PandaScoreService {
         leagueImage: match.league.image_url,
         serieName: match.serie.full_name,
         tournamentName: match.tournament.name,
-        tournamentId: match.tournament_id?.toString(),
+        tournamentId: match.tournament.id.toString(),
         hasBracket: match.tournament.has_bracket,
         numberOfGames: match.number_of_games,
         beginAt: new Date(match.scheduled_at),
