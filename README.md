@@ -101,59 +101,29 @@ A Discord bot that automatically notifies about Karmine Corp matches in League o
 
 ### Discord Configuration
 
+```
+/config
+```
+
 1. **Set up the announcement channel:**
 
-   ```
-   /config
-   ```
-
-   Then select "📺 Announcement Channel"
+   Select "📺 Announcement Channel"
 
 2. **Configure roles to ping (optional):**
 
-   ```
-   /config
-   ```
-
-   Then select "👥 Rôles à mentionner" to choose which roles should be mentioned in announcements.
+   Select "👥 Rôles à mentionner" to choose which roles should be mentioned in announcements.
 
 3. **Filter teams (optional):**
 
-   ```
-   /config
-   ```
-
-   Then select "🏆 Team Filter"
+   Select "🏆 Team Filter"
 
 4. **Enable pre-match notifications (optional):**
 
-   ```
-   /config
-   ```
+   Select "🔔 Pre-match Notifications"
 
-   Then select "🔔 Pre-match Notifications"
+5. **Enable result notifications (optional):**
 
-### Tournament Standings
-
-Use the `/standing` command to view tournament rankings and brackets:
-
-1. **Select a team:**
-
-   - `Karmine Corp` - All teams
-   - `KC` - Main League of Legends team
-   - `KCB` - Academy League of Legends team
-   - `KCBS` - LFL2 League of Legends team
-
-2. **View standings:**
-
-   - The bot will automatically detect tournaments from recent and upcoming matches
-   - If multiple tournaments are found, you'll be prompted to choose one
-   - Standings show top 10 teams with points and win/loss records
-   - Brackets show match progression with status indicators
-
-3. **Smart caching:**
-   - Results are cached for 5 minutes to prevent API spam
-   - Cache automatically refreshes when expired
+   Select "🔔 Pre-match Notifications"
 
 ### Supported Teams
 
@@ -212,44 +182,6 @@ npm run check-matches
 # Test pre-match notifications
 npm run check-upcoming-matches
 ```
-
-## 📊 Database Schema
-
-### Match Table
-
-- `id` - PandaScore match ID (primary key)
-- `kcTeam` - KC team name (KC, KCB, KCBS, etc.)
-- `kcId` - KC team ID
-- `opponent` - Opponent team name
-- `opponentImage` - Opponent team image URL
-- `leagueName` - League name
-- `leagueImage` - League image URL
-- `serieName` - Serie name
-- `tournamentName` - Tournament name
-- `tournamentId` - Tournament ID from PandaScore
-- `hasBracket` - Whether tournament has bracket format
-- `numberOfGames` - Number of games in the match
-- `beginAt` - Match start time
-- `status` - Match status (scheduled, live, finished, announced)
-- `score` - Match score (e.g., "2-1", "3-0")
-- `createdAt` - Record creation timestamp
-
-### Standing Cache Table
-
-- `id` - Cache entry ID (primary key)
-- `tournamentId` - Tournament ID
-- `data` - JSON string of standings/bracket data
-- `expiresAt` - Cache expiration time
-- `createdAt` - Record creation timestamp
-
-### Guild Settings Table
-
-- `guildId` - Discord guild ID (primary key)
-- `channelId` - Announcement channel ID
-- `pingRoles` - Array of role IDs to ping in announcements
-- `filteredTeams` - Array of team IDs to filter matches
-- `enablePreMatchNotifications` - Enable pre-match notifications
-- `enableScoreNotifications` - Enable score notifications
 
 ## 🔧 Troubleshooting
 
