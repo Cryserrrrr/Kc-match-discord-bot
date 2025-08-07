@@ -4,12 +4,65 @@ import { PrismaClient } from "@prisma/client";
 import { PandaScoreService } from "../services/pandascore";
 import { config } from "dotenv";
 import { logger } from "../utils/logger";
+import {
+  Client,
+  GatewayIntentBits,
+  TextChannel,
+  ChannelType,
+} from "discord.js";
+import { createMatchEmbed } from "../utils/embedBuilder";
+import { formatRoleMentions } from "../utils/roleMentions";
 
 config();
 
 const MAX_RETRIES = 5;
 const INITIAL_DELAY = 2000;
 const MAX_DELAY = 60000;
+
+let client: Client | null = null;
+let isClientReady = false;
+let guildSettingsCache: any[] | null = null;
+let lastCacheUpdate = 0;
+const CACHE_DURATION = 5 * 60 * 1000;
+
+async function getDiscordClient(): Promise<Client> {
+  if (!client) {
+    client = new Client({
+      intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages],
+    });
+  }
+
+  if (!isClientReady) {
+    await withRetry(async () => {
+      try {
+        await client!.login(process.env.DISCORD_TOKEN);
+        isClientReady = true;
+        logger.info(`Logged in as ${client!.user?.tag}`);
+      } catch (error) {
+        logger.error("Failed to login to Discord:", error);
+        throw error;
+      }
+    });
+  }
+
+  return client;
+}
+
+async function getGuildSettings(): Promise<any[]> {
+  const now = Date.now();
+
+  if (guildSettingsCache && now - lastCacheUpdate < CACHE_DURATION) {
+    return guildSettingsCache;
+  }
+
+  const prismaClient = new PrismaClient();
+  guildSettingsCache = await prismaClient.guildSettings.findMany();
+  await prismaClient.$disconnect();
+
+  lastCacheUpdate = now;
+
+  return guildSettingsCache;
+}
 
 async function withRetry<T>(
   fn: () => Promise<T>,
@@ -43,6 +96,19 @@ async function withRetry<T>(
   throw lastError!;
 }
 
+async function cleanup() {
+  if (client && isClientReady) {
+    try {
+      await client.destroy();
+      client = null;
+      isClientReady = false;
+    } catch (error) {
+      logger.warn("Error destroying Discord client:", error);
+    }
+  }
+  guildSettingsCache = null;
+}
+
 async function main() {
   let prisma: PrismaClient | null = null;
 
@@ -68,6 +134,7 @@ async function main() {
       logger.error("❌ Error during cleanup:", cleanupError);
     }
 
+    await cleanup();
     process.exit(0);
   }
 }
@@ -144,16 +211,101 @@ async function checkAndSaveMatches(prisma: PrismaClient) {
   }
 }
 
+async function sendLastMinuteNotification(match: any, guildSettings: any[]) {
+  try {
+    const discordClient = await getDiscordClient();
+
+    const embed = await createMatchEmbed({
+      kcTeam: match.kcTeam,
+      kcId: match.kcId,
+      opponent: match.opponent,
+      opponentImage: match.opponentImage || undefined,
+      tournamentName: match.tournamentName,
+      leagueName: match.leagueName,
+      leagueImage: match.leagueImage || undefined,
+      serieName: match.serieName,
+      numberOfGames: match.numberOfGames,
+      beginAt: match.beginAt,
+    });
+
+    const channelPromises = guildSettings.map(async (setting) => {
+      try {
+        if (!setting.enablePreMatchNotifications) {
+          return;
+        }
+
+        if (setting.filteredTeams && setting.filteredTeams.length > 0) {
+          if (!setting.filteredTeams.includes(match.kcId)) {
+            return;
+          }
+        }
+
+        const guild = discordClient.guilds.cache.get(setting.guildId);
+        if (!guild) {
+          logger.warn(`Guild ${setting.guildId} not found`);
+          return;
+        }
+
+        try {
+          await guild.fetch();
+        } catch (error) {
+          logger.warn(`Failed to fetch guild ${setting.guildId}:`, error);
+        }
+
+        const channel = guild.channels.cache.get(
+          setting.channelId
+        ) as TextChannel;
+        if (!channel) {
+          return;
+        }
+
+        // Create ping message with selected roles
+        const pingRoles = (setting as any).pingRoles || [];
+        const roleMentions = formatRoleMentions(pingRoles);
+        const message =
+          pingRoles.length > 0
+            ? `${roleMentions}\n🚨 **MATCH EN COURS !** 🚨`
+            : `🚨 **MATCH EN COURS !** 🚨`;
+
+        await Promise.race([
+          channel.send({
+            content: message,
+            embeds: [embed],
+          }),
+          new Promise((_, reject) =>
+            setTimeout(() => reject(new Error("Send timeout")), 10000)
+          ),
+        ]);
+
+        logger.info(
+          `Sent last minute notification for match ${match.id} to guild ${setting.guildId}`
+        );
+      } catch (error) {
+        logger.error(
+          `Error sending last minute notification to guild ${setting.guildId}:`,
+          error
+        );
+      }
+    });
+
+    await Promise.allSettled(channelPromises);
+  } catch (error) {
+    logger.error(
+      `Error sending last minute notification for match ${match.id}:`,
+      error
+    );
+  }
+}
+
 async function checkLiveMatchesAndUpdateScores(
   prisma: PrismaClient,
   pandaScoreService: PandaScoreService
 ) {
   try {
-    // Get matches that are scheduled or live
     const activeMatches = await prisma.match.findMany({
       where: {
         status: {
-          in: ["scheduled", "live"],
+          in: ["scheduled", "pre-announced", "live"],
         },
         beginAt: {
           lte: new Date(),
@@ -185,6 +337,25 @@ async function checkLiveMatchesAndUpdateScores(
 
             if (currentMatch.status === "running") {
               status = "live";
+
+              // Check if this is a last minute announcement (match was scheduled but now running)
+              if (dbMatch.status === "scheduled") {
+                logger.info(
+                  `🚨 Last minute announcement for match ${dbMatch.id}: ${dbMatch.kcTeam} vs ${dbMatch.opponent}`
+                );
+
+                try {
+                  const guildSettings = await getGuildSettings();
+                  if (guildSettings.length > 0) {
+                    await sendLastMinuteNotification(dbMatch, guildSettings);
+                  }
+                } catch (notificationError) {
+                  logger.error(
+                    `Error sending last minute notification for match ${dbMatch.id}:`,
+                    notificationError
+                  );
+                }
+              }
             } else if (currentMatch.status === "finished") {
               status = "finished";
               const matchScore = pandaScoreService.getMatchScore(currentMatch);
@@ -225,6 +396,9 @@ async function checkLiveMatchesAndUpdateScores(
     // Don't throw here to avoid stopping the main match fetching process
   }
 }
+
+process.on("SIGINT", cleanup);
+process.on("SIGTERM", cleanup);
 
 // Run the script
 main();

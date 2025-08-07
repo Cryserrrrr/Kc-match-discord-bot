@@ -21,10 +21,10 @@ model Match {
   serieName       String   // Serie name
   tournamentName  String   // Tournament name
   tournamentId    String?  // Tournament ID from PandaScore
-  hasBracket      Boolean  @default(false) // Whether tournament has bracket format
+  hasBracket      Boolean  @default(false)
   numberOfGames   Int      // Number of games in the match
   beginAt         DateTime // Match date/time
-  status          String   @default("scheduled") // scheduled, live, finished, announced
+  status          String   @default("scheduled") // scheduled, pre-announced, live, finished, announced
   score           String?  // Match score (e.g., "2-1", "3-0")
   createdAt       DateTime @default(now())
 

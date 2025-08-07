@@ -134,6 +134,7 @@ async function checkUpcomingMatches() {
             gte: thirtyMinutesFromNow,
             lte: thirtyFiveMinutesFromNow,
           },
+          status: "scheduled",
         },
         select: {
           id: true,
@@ -153,6 +154,29 @@ async function checkUpcomingMatches() {
         },
       });
     });
+
+    // Update status to pre-announced for matches that will be announced
+    if (upcomingMatches.length > 0) {
+      await withRetry(async () => {
+        if (!prismaClient) throw new Error("Prisma client not initialized");
+
+        const matchIds = upcomingMatches.map((match) => match.id);
+        await prismaClient.match.updateMany({
+          where: {
+            id: {
+              in: matchIds,
+            },
+          },
+          data: {
+            status: "pre-announced",
+          },
+        });
+
+        logger.info(
+          `Updated ${upcomingMatches.length} matches to pre-announced status`
+        );
+      });
+    }
 
     logger.info(
       `Found ${upcomingMatches.length} matches starting in the next 30-35 minutes`
