@@ -11,6 +11,8 @@ import { CONFIG, ERROR_MESSAGES } from "../utils/config";
 import { withTimeout } from "../utils/timeoutUtils";
 import { getTeamDisplayName } from "../utils/teamMapper";
 import { PandaScoreService } from "../services/pandascore";
+import { createTeamChoices } from "../utils/teamOptions";
+import { handleInteractionError } from "../utils/retryUtils";
 
 interface Tournament {
   id: string;
@@ -30,19 +32,6 @@ interface StandingTeam {
   draws?: number;
 }
 
-interface BracketMatch {
-  id: number;
-  name: string;
-  winner: {
-    name: string;
-  } | null;
-  loser: {
-    name: string;
-  } | null;
-  status: string;
-  scheduled_at?: string;
-}
-
 const CACHE_DURATION = 5 * 60 * 1000;
 
 export const data = new SlashCommandBuilder()
@@ -53,15 +42,7 @@ export const data = new SlashCommandBuilder()
       .setName("team")
       .setDescription("Choisir une équipe spécifique de Karmine Corp")
       .setRequired(true)
-      .addChoices(
-        { name: "KC (LEC)", value: "134078" },
-        { name: "KCB (LFL)", value: "128268" },
-        { name: "KCBS (LFL2)", value: "136080" },
-        { name: "KC Valorant", value: "130922" },
-        { name: "KCGC Valorant", value: "132777" },
-        { name: "KCBS Valorant", value: "136165" },
-        { name: "KC Rocket League", value: "129570" }
-      )
+      .addChoices(...createTeamChoices())
   );
 
 export async function execute(interaction: any) {
@@ -152,6 +133,7 @@ export async function execute(interaction: any) {
     }
   } catch (error) {
     logger.error("Error in standing command:", error);
+    handleInteractionError(error, "standing command");
     await interaction.editReply({
       content: ERROR_MESSAGES.GENERAL.COMMAND_EXECUTION_ERROR,
     });
@@ -236,7 +218,7 @@ async function sendStandingEmbed(
   data: any
 ) {
   const embed = new EmbedBuilder()
-    .setTitle(`🏆 ${tournament.name}`)
+    .setTitle(`${tournament.name}`)
     .setColor(0x0099ff)
     .setTimestamp();
 
@@ -306,7 +288,7 @@ async function sendStandingEmbed(
       return;
     }
   } else {
-    embed.setDescription("📈 **Classement du tournoi**");
+    embed.setDescription("**Classement du tournoi**");
 
     if (Array.isArray(data) && data.length > 0) {
       let standingText = "";
@@ -372,7 +354,7 @@ function formatMatchCompact(match: any) {
   ) {
     const score1 = match.results[0]?.score || 0;
     const score2 = match.results[1]?.score || 0;
-    matchText += `\n📊 ${score1}-${score2}`;
+    matchText += `\n🏅 ${score1}-${score2}`;
   }
 
   return matchText;
@@ -402,7 +384,7 @@ function createBracketEmbed(
   matches: any[]
 ) {
   const embed = new EmbedBuilder()
-    .setTitle(`🏆 ${tournamentName} - ${bracketType}`)
+    .setTitle(`${tournamentName} - ${bracketType}`)
     .setColor(color)
     .setTimestamp();
 

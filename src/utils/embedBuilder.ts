@@ -123,10 +123,10 @@ export async function createScoreEmbed(
     resultEmoji = "🤝";
     resultText = "Match nul";
   } else if (kcWon) {
-    resultEmoji = "✅";
+    resultEmoji = "📈";
     resultText = "Victoire KC !";
   } else {
-    resultEmoji = "❌";
+    resultEmoji = "📉";
     resultText = "Défaite KC";
   }
 
@@ -165,34 +165,4 @@ function getEmbedColor(kcId: string): number {
   }
 
   return 0x00ff00;
-}
-
-export function createErrorEmbed(message: string): EmbedBuilder {
-  return new EmbedBuilder()
-    .setColor(0xff0000)
-    .setTitle("❌ Erreur")
-    .setDescription(message)
-    .setTimestamp()
-    .setFooter({ text: "Karmine Corp Bot" });
-}
-
-export function createSuccessEmbed(
-  title: string,
-  message: string
-): EmbedBuilder {
-  return new EmbedBuilder()
-    .setColor(0x00ff00)
-    .setTitle(`✅ ${title}`)
-    .setDescription(message)
-    .setTimestamp()
-    .setFooter({ text: "Karmine Corp Bot" });
-}
-
-export function createInfoEmbed(title: string, message: string): EmbedBuilder {
-  return new EmbedBuilder()
-    .setColor(0x0099ff)
-    .setTitle(`ℹ️ ${title}`)
-    .setDescription(message)
-    .setTimestamp()
-    .setFooter({ text: "Karmine Corp Bot" });
 }

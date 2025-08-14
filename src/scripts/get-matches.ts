@@ -189,10 +189,6 @@ async function checkAndSaveMatches(prisma: PrismaClient) {
               logger.info(
                 `✅ New match added to database: ${dbMatch.kcTeam} vs ${dbMatch.opponent}`
               );
-            } else {
-              logger.info(
-                `⏭️  Match already exists: ${dbMatch.kcTeam} vs ${dbMatch.opponent}`
-              );
             }
           } catch (matchError) {
             logger.error(`❌ Error processing match ${match.id}:`, matchError);
@@ -338,7 +334,6 @@ async function checkLiveMatchesAndUpdateScores(
             if (currentMatch.status === "running") {
               status = "live";
 
-              // Check if this is a last minute announcement (match was scheduled but now running)
               if (dbMatch.status === "scheduled") {
                 logger.info(
                   `🚨 Last minute announcement for match ${dbMatch.id}: ${dbMatch.kcTeam} vs ${dbMatch.opponent}`

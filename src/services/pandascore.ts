@@ -120,8 +120,6 @@ export class PandaScoreService {
     ];
 
     try {
-      logger.info(`Fetching matches for KC teams: ${kcTeamIds.join(", ")}`);
-
       const matches = await this.makeRequest("/matches/upcoming", {
         "filter[opponent_id]": kcTeamIds.join(","),
         sort: "begin_at",

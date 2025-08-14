@@ -3,12 +3,14 @@ import {
   CommandInteraction,
   ActionRowBuilder,
   StringSelectMenuBuilder,
-  StringSelectMenuOptionBuilder,
 } from "discord.js";
 import { prisma } from "../index";
 import { logger } from "../utils/logger";
 import { createMatchEmbed } from "../utils/embedBuilder";
 import { getTeamDisplayName } from "../utils/teamMapper";
+import { createTeamChoices, createTeamMenuOptions } from "../utils/teamOptions";
+import { filterMatchesByGuild } from "../utils/guildFilters";
+import { handleInteractionError } from "../utils/retryUtils";
 
 export const data = new SlashCommandBuilder()
   .setName("nextmatch")
@@ -20,13 +22,7 @@ export const data = new SlashCommandBuilder()
       .setRequired(false)
       .addChoices(
         { name: "Toutes les équipes", value: "all" },
-        { name: "KC (LEC)", value: "134078" },
-        { name: "KCB (LFL)", value: "128268" },
-        { name: "KCBS (LFL2)", value: "136080" },
-        { name: "KC Valorant", value: "130922" },
-        { name: "KCGC Valorant", value: "132777" },
-        { name: "KCBS Valorant", value: "136165" },
-        { name: "KC Rocket League", value: "129570" }
+        ...createTeamChoices()
       )
   );
 
@@ -128,52 +124,8 @@ export async function execute(interaction: CommandInteraction) {
       return;
     }
 
-    // Create select menu for team selection
-    const menuOptions = [
-      new StringSelectMenuOptionBuilder()
-        .setLabel("Toutes les équipes")
-        .setDescription(
-          filteredTeams.length > 0
-            ? `Voir le prochain match des équipes filtrées (${filteredTeams.length} équipe(s))`
-            : "Voir le prochain match de toutes les équipes"
-        )
-        .setValue("all"),
-    ];
-
-    // Add team options, only including filtered teams if filters are set
-    const allTeams = [
-      {
-        id: "134078",
-        name: "KC (LEC)",
-        desc: "Équipe principale League of Legends",
-      },
-      {
-        id: "128268",
-        name: "KCB (LFL)",
-        desc: "Équipe académique League of Legends",
-      },
-      {
-        id: "136080",
-        name: "KCBS (LFL2)",
-        desc: "Équipe LFL2 League of Legends",
-      },
-      { id: "130922", name: "KC Valorant", desc: "Équipe principale Valorant" },
-      { id: "132777", name: "KCGC Valorant", desc: "Équipe féminine Valorant" },
-      { id: "136165", name: "KCBS Valorant", desc: "Équipe KCBS Valorant" },
-      { id: "129570", name: "KC Rocket League", desc: "Équipe Rocket League" },
-    ];
-
-    allTeams.forEach((team) => {
-      // Only add team if no filters are set, or if the team is in the filtered list
-      if (filteredTeams.length === 0 || filteredTeams.includes(team.id)) {
-        menuOptions.push(
-          new StringSelectMenuOptionBuilder()
-            .setLabel(team.name)
-            .setDescription(team.desc)
-            .setValue(team.id)
-        );
-      }
-    });
+    // Create select menu for team selection using utility function
+    const menuOptions = createTeamMenuOptions(filteredTeams);
 
     const selectMenu = new StringSelectMenuBuilder()
       .setCustomId("team_select")
@@ -187,6 +139,7 @@ export async function execute(interaction: CommandInteraction) {
     await interaction.editReply({ embeds: [embed], components: [row] });
   } catch (error) {
     logger.error("Error in nextmatch command:", error);
+    handleInteractionError(error, "nextmatch command");
 
     // Check if interaction is still valid and handle accordingly
     try {
