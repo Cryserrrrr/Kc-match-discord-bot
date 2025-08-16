@@ -3,6 +3,7 @@ import { config } from "dotenv";
 import { prisma } from "../index";
 import { logger } from "../utils/logger";
 import { StatsManager } from "../utils/statsManager";
+import { withRetry, withTimeout } from "../utils/retryUtils";
 
 config();
 
@@ -18,12 +19,19 @@ async function updateGuildStats() {
 
     for (const [guildId, guild] of guilds) {
       try {
-        const fetchedGuild = await guild.fetch();
+        const fetchedGuild = await withRetry(() => guild.fetch(), {
+          maxRetries: 3,
+          initialDelay: 1000,
+        });
 
-        await StatsManager.ensureGuildExists(
-          guildId,
-          fetchedGuild.name,
-          fetchedGuild.memberCount
+        await withRetry(
+          () =>
+            StatsManager.ensureGuildExists(
+              guildId,
+              fetchedGuild.name,
+              fetchedGuild.memberCount
+            ),
+          { maxRetries: 3, initialDelay: 1000 }
         );
 
         logger.info(
@@ -33,10 +41,14 @@ async function updateGuildStats() {
         logger.error(`Error updating stats for guild ${guildId}:`, error);
 
         try {
-          await StatsManager.ensureGuildExists(
-            guildId,
-            guild.name,
-            guild.memberCount || 0
+          await withRetry(
+            () =>
+              StatsManager.ensureGuildExists(
+                guildId,
+                guild.name,
+                guild.memberCount || 0
+              ),
+            { maxRetries: 2, initialDelay: 2000 }
           );
           logger.info(`Updated stats for guild ${guildId} using cached data`);
         } catch (fallbackError) {
@@ -61,11 +73,15 @@ async function fillMissingGuildData() {
     logger.info("Checking for guilds with missing data...");
 
     const [nullNamesCount, nullUpdatedAtCount, nullMemberCountCount] =
-      await Promise.all([
-        prisma.$queryRaw`SELECT COUNT(*) as count FROM guild_settings WHERE name IS NULL`,
-        prisma.$queryRaw`SELECT COUNT(*) as count FROM guild_settings WHERE "updatedAt" IS NULL`,
-        prisma.$queryRaw`SELECT COUNT(*) as count FROM guild_settings WHERE "memberCount" IS NULL`,
-      ]);
+      await withRetry(
+        () =>
+          Promise.all([
+            prisma.$queryRaw`SELECT COUNT(*) as count FROM guild_settings WHERE name IS NULL`,
+            prisma.$queryRaw`SELECT COUNT(*) as count FROM guild_settings WHERE "updatedAt" IS NULL`,
+            prisma.$queryRaw`SELECT COUNT(*) as count FROM guild_settings WHERE "memberCount" IS NULL`,
+          ]),
+        { maxRetries: 3, initialDelay: 1000 }
+      );
 
     const totalMissingData =
       (nullNamesCount as any)[0]?.count +
@@ -82,29 +98,38 @@ async function fillMissingGuildData() {
     }
 
     if ((nullNamesCount as any)[0]?.count > 0) {
-      const result = await prisma.$executeRaw`
-        UPDATE guild_settings 
-        SET name = 'Unknown Guild' 
-        WHERE name IS NULL
-      `;
+      const result = await withRetry(
+        () => prisma.$executeRaw`
+          UPDATE guild_settings 
+          SET name = 'Unknown Guild' 
+          WHERE name IS NULL
+        `,
+        { maxRetries: 3, initialDelay: 1000 }
+      );
       logger.info(`Updated ${result} guilds with missing names`);
     }
 
     if ((nullUpdatedAtCount as any)[0]?.count > 0) {
-      const result = await prisma.$executeRaw`
-        UPDATE guild_settings 
-        SET "updatedAt" = NOW() 
-        WHERE "updatedAt" IS NULL
-      `;
+      const result = await withRetry(
+        () => prisma.$executeRaw`
+          UPDATE guild_settings 
+          SET "updatedAt" = NOW() 
+          WHERE "updatedAt" IS NULL
+        `,
+        { maxRetries: 3, initialDelay: 1000 }
+      );
       logger.info(`Updated ${result} guilds with missing updatedAt`);
     }
 
     if ((nullMemberCountCount as any)[0]?.count > 0) {
-      const result = await prisma.$executeRaw`
-        UPDATE guild_settings 
-        SET "memberCount" = 0 
-        WHERE "memberCount" IS NULL
-      `;
+      const result = await withRetry(
+        () => prisma.$executeRaw`
+          UPDATE guild_settings 
+          SET "memberCount" = 0 
+          WHERE "memberCount" IS NULL
+        `,
+        { maxRetries: 3, initialDelay: 1000 }
+      );
       logger.info(`Updated ${result} guilds with missing memberCount`);
     }
 
@@ -112,11 +137,15 @@ async function fillMissingGuildData() {
       remainingNullNames,
       remainingNullUpdatedAt,
       remainingNullMemberCount,
-    ] = await Promise.all([
-      prisma.$queryRaw`SELECT COUNT(*) as count FROM guild_settings WHERE name IS NULL`,
-      prisma.$queryRaw`SELECT COUNT(*) as count FROM guild_settings WHERE "updatedAt" IS NULL`,
-      prisma.$queryRaw`SELECT COUNT(*) as count FROM guild_settings WHERE "memberCount" IS NULL`,
-    ]);
+    ] = await withRetry(
+      () =>
+        Promise.all([
+          prisma.$queryRaw`SELECT COUNT(*) as count FROM guild_settings WHERE name IS NULL`,
+          prisma.$queryRaw`SELECT COUNT(*) as count FROM guild_settings WHERE "updatedAt" IS NULL`,
+          prisma.$queryRaw`SELECT COUNT(*) as count FROM guild_settings WHERE "memberCount" IS NULL`,
+        ]),
+      { maxRetries: 3, initialDelay: 1000 }
+    );
 
     logger.info("Verification results:");
     logger.info(
@@ -158,25 +187,31 @@ async function cleanupOldStats() {
     const ninetyDaysAgo = new Date();
     ninetyDaysAgo.setDate(ninetyDaysAgo.getDate() - 90);
 
-    const deletedCommandStats = await prisma.commandStat.deleteMany({
-      where: {
-        executedAt: {
-          lt: ninetyDaysAgo,
-        },
-      },
-    });
-
     const thirtyDaysAgo = new Date();
     thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
 
-    const deletedPerformanceMetrics = await prisma.performanceMetric.deleteMany(
-      {
-        where: {
-          executedAt: {
-            lt: thirtyDaysAgo,
+    const deletedCommandStats = await withRetry(
+      () =>
+        prisma.commandStat.deleteMany({
+          where: {
+            executedAt: {
+              lt: ninetyDaysAgo,
+            },
           },
-        },
-      }
+        }),
+      { maxRetries: 3, initialDelay: 1000 }
+    );
+
+    const deletedPerformanceMetrics = await withRetry(
+      () =>
+        prisma.performanceMetric.deleteMany({
+          where: {
+            executedAt: {
+              lt: thirtyDaysAgo,
+            },
+          },
+        }),
+      { maxRetries: 3, initialDelay: 1000 }
     );
 
     logger.info(
@@ -189,30 +224,73 @@ async function cleanupOldStats() {
 
 async function main() {
   try {
-    await client.login(process.env.DISCORD_TOKEN);
+    logger.info("Starting guild statistics update script...");
+
+    const scriptTimeout = setTimeout(() => {
+      logger.warn("Script timeout reached, forcing exit...");
+      process.exit(1);
+    }, 5 * 60 * 1000);
+
+    await withRetry(() => client.login(process.env.DISCORD_TOKEN), {
+      maxRetries: 3,
+      initialDelay: 2000,
+    });
 
     logger.info("Bot logged in, starting statistics update...");
 
-    await new Promise((resolve) => client.once("ready", resolve));
+    await withRetry(
+      () => new Promise((resolve) => client.once("ready", resolve)),
+      { maxRetries: 3, initialDelay: 2000 }
+    );
 
     await updateGuildStats();
 
     await cleanupOldStats();
 
     logger.info("Statistics update completed successfully");
+
+    clearTimeout(scriptTimeout);
   } catch (error) {
     logger.error("Error in main function:", error);
   } finally {
-    await client.destroy();
-    await prisma.$disconnect();
+    try {
+      logger.info("Cleaning up connections...");
+
+      await Promise.race([
+        client.destroy(),
+        new Promise((resolve) => setTimeout(resolve, 5000)),
+      ]);
+
+      await Promise.race([
+        prisma.$disconnect(),
+        new Promise((resolve) => setTimeout(resolve, 5000)),
+      ]);
+
+      logger.info("Cleanup completed");
+    } catch (cleanupError) {
+      logger.error("Error during cleanup:", cleanupError);
+    }
   }
 }
 
 if (require.main === module) {
-  main().catch((error) => {
-    logger.error("Unhandled error in statistics update script:", error);
-    process.exit(1);
-  });
+  const gracefulShutdown = (signal: string) => {
+    logger.info(`Received ${signal}, shutting down gracefully...`);
+    process.exit(0);
+  };
+
+  process.on("SIGTERM", () => gracefulShutdown("SIGTERM"));
+  process.on("SIGINT", () => gracefulShutdown("SIGINT"));
+
+  main()
+    .then(() => {
+      logger.info("Script completed successfully, exiting...");
+      process.exit(0);
+    })
+    .catch((error) => {
+      logger.error("Unhandled error in statistics update script:", error);
+      process.exit(1);
+    });
 }
 
 export { updateGuildStats, cleanupOldStats };
