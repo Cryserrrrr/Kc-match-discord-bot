@@ -5,7 +5,7 @@
   "main": "dist/index.js",
   "scripts": {
     "build": "tsc",
-    "start": "ts-node scripts/deploy-commands.js && node dist/index.js",
+    "start": "ts-node scripts/deploy-commands-compiled.js && node dist/index.js",
     "dev": "ts-node src/index.ts",
     "deploy-commands": "ts-node scripts/deploy-commands-compiled.js",
     "check-matches": "ts-node src/scripts/check-matches.ts",
