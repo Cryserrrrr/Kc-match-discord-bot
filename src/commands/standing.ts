@@ -13,6 +13,7 @@ import { getTeamDisplayName } from "../utils/teamMapper";
 import { PandaScoreService } from "../services/pandascore";
 import { createTeamChoices } from "../utils/teamOptions";
 import { handleInteractionError } from "../utils/retryUtils";
+import { StatsManager } from "../utils/statsManager";
 
 interface Tournament {
   id: string;
@@ -46,6 +47,7 @@ export const data = new SlashCommandBuilder()
   );
 
 export async function execute(interaction: any) {
+  const effectiveGuildId = interaction.guildId || "DM";
   const selectedTeam = interaction.options.getString("team");
 
   if (!selectedTeam) {
@@ -54,6 +56,12 @@ export async function execute(interaction: any) {
     });
     return;
   }
+
+  await StatsManager.ensureGuildExists(
+    effectiveGuildId,
+    interaction.guild?.name,
+    interaction.guild?.memberCount
+  );
 
   cleanupObsoleteCache().catch((error) => {
     logger.error("Error cleaning up obsolete cache:", error);

@@ -11,6 +11,7 @@ import { getTeamDisplayName } from "../utils/teamMapper";
 import { createTeamChoices, createTeamMenuOptions } from "../utils/teamOptions";
 import { filterMatchesByGuild } from "../utils/guildFilters";
 import { handleInteractionError } from "../utils/retryUtils";
+import { StatsManager } from "../utils/statsManager";
 
 export const data = new SlashCommandBuilder()
   .setName("nextmatch")
@@ -27,6 +28,9 @@ export const data = new SlashCommandBuilder()
   );
 
 export async function execute(interaction: CommandInteraction) {
+  const startTime = Date.now();
+  const effectiveGuildId = interaction.guildId || "DM";
+
   try {
     if (!interaction.deferred && !interaction.replied) {
       await interaction.deferReply();
@@ -35,12 +39,17 @@ export async function execute(interaction: CommandInteraction) {
     const selectedTeam =
       (interaction as any).options?.getString("team") || "all";
 
-    const guildId = interaction.guildId!;
+    await StatsManager.ensureGuildExists(
+      effectiveGuildId,
+      interaction.guild?.name,
+      interaction.guild?.memberCount
+    );
+
     let guildSettings;
 
     try {
       guildSettings = await prisma.guildSettings.findUnique({
-        where: { guildId },
+        where: { guildId: effectiveGuildId },
       });
     } catch (dbError) {
       logger.error("Error fetching guild settings:", dbError);
@@ -137,11 +146,35 @@ export async function execute(interaction: CommandInteraction) {
     );
 
     await interaction.editReply({ embeds: [embed], components: [row] });
+
+    await StatsManager.recordCommandExecution({
+      guildId: effectiveGuildId,
+      commandName: "nextmatch",
+      userId: interaction.user.id,
+      username: interaction.user.username,
+      teamArg: selectedTeam,
+      startTime,
+      success: true,
+    });
   } catch (error) {
     logger.error("Error in nextmatch command:", error);
     handleInteractionError(error, "nextmatch command");
 
-    // Check if interaction is still valid and handle accordingly
+    try {
+      await StatsManager.recordCommandExecution({
+        guildId: effectiveGuildId,
+        commandName: "nextmatch",
+        userId: interaction.user.id,
+        username: interaction.user.username,
+        teamArg: "all",
+        startTime,
+        success: false,
+        errorMessage: error instanceof Error ? error.message : "Unknown error",
+      });
+    } catch (statsError) {
+      logger.error("Error recording command stats:", statsError);
+    }
+
     try {
       if (!interaction.replied && !interaction.deferred) {
         await interaction.reply({

@@ -186,7 +186,13 @@ export async function handleChannelSelection(
   await prisma.guildSettings.upsert({
     where: { guildId },
     update: { channelId: selectedChannelId },
-    create: { guildId, channelId: selectedChannelId, pingRoles: [] } as any,
+    create: {
+      guildId,
+      channelId: selectedChannelId,
+      pingRoles: [],
+      name: interaction.guild?.name || "Unknown Guild",
+      memberCount: interaction.guild?.memberCount || 0,
+    },
   });
 
   const embed = new EmbedBuilder()

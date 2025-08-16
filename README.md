@@ -12,6 +12,11 @@ A Discord bot that automatically notifies about Karmine Corp matches in League o
 - 📊 **Slash commands** - Modern and intuitive Discord interface
 - 🏆 **Tournament standings** - View tournament rankings and brackets
 - 💾 **Smart caching** - 5-minute cache to prevent API spam
+- 📈 **Usage statistics** - Track command usage and performance metrics
+- 🎫 **Support ticket system** - Create and manage support tickets
+- 💬 **DM support** - Most commands work in private messages
+- 🎉 **Welcome messages** - Automatic welcome when bot is added to server
+- 🔧 **Advanced analytics** - Team popularity tracking and performance monitoring
 
 ## 📋 Commands
 
@@ -19,6 +24,8 @@ A Discord bot that automatically notifies about Karmine Corp matches in League o
 
 - `/nextmatch` - Show the next Karmine Corp match
 - `/standing` - Show tournament standings or brackets for a team
+- `/ticket` - Create a support ticket (bug report or feature request)
+- `/mytickets` - View your personal support tickets
 - `/config` - Complete bot configuration (server management permissions required)
 
 ### Maintenance Scripts
@@ -26,6 +33,7 @@ A Discord bot that automatically notifies about Karmine Corp matches in League o
 - `npm run get-matches` - Fetch new matches from PandaScore
 - `npm run check-matches` - Check and announce matches for the next 24h
 - `npm run check-upcoming-matches` - Check matches in the next 30-35 minutes
+- `npm run update-guild-stats` - Update guild statistics and clean old data
 
 ## ⚙️ Setup
 
@@ -88,7 +96,10 @@ A Discord bot that automatically notifies about Karmine Corp matches in League o
    - Send Messages
    - Use Slash Commands
    - Embed Links
-   - Manage Server (for configuration)
+   - Attach Files
+   - View Audit Log (for welcome messages)
+   - Mention Everyone (for notifications)
+   - Manage Messages (for notifications)
 8. Use the generated URL to invite the bot to your server
 
 ### PandaScore API Setup
@@ -123,7 +134,39 @@ A Discord bot that automatically notifies about Karmine Corp matches in League o
 
 5. **Enable result notifications (optional):**
 
-   Select "🔔 Pre-match Notifications"
+   Select "🏆 Score Notifications"
+
+### Support System
+
+#### Creating a ticket
+
+```
+/ticket type:bug
+```
+
+- Choose between "🐛 Bug" or "💡 Amélioration"
+- Fill in the description modal
+- Receive confirmation via DM
+
+#### Viewing your tickets
+
+```
+/mytickets
+```
+
+- View all your personal tickets
+- See status updates and responses
+- Works in both servers and DMs
+
+### DM Support
+
+Most commands work in private messages (DMs):
+
+- ✅ `/nextmatch` - View next matches
+- ✅ `/standing` - View tournament standings
+- ✅ `/ticket` - Create support tickets
+- ✅ `/mytickets` - View your tickets
+- ❌ `/config` - Server configuration only
 
 ### Supported Teams
 
@@ -135,6 +178,34 @@ A Discord bot that automatically notifies about Karmine Corp matches in League o
 - **KCBS Valorant** - Academy Valorant team
 - **KC Rocket League** - Rocket League team
 
+## 📊 Statistics & Analytics
+
+The bot automatically tracks:
+
+### Command Usage
+
+- Number of commands executed per server and globally
+- Most popular commands
+- User activity patterns
+
+### Performance Metrics
+
+- Response times for each command
+- Error rates and types
+- Success/failure statistics
+
+### Team Popularity
+
+- Most requested teams in commands
+- Usage trends over time
+- Popular team combinations
+
+### Server Analytics
+
+- Server member counts
+- Active server statistics
+- Configuration usage patterns
+
 ## 🔄 Retry System
 
 The bot includes a robust retry system with exponential backoff:
@@ -143,6 +214,22 @@ The bot includes a robust retry system with exponential backoff:
 - **Progressive delays**: 2s → 4s → 8s → 16s → 32s → 60s max
 - **Detailed logs** to diagnose issues
 - **Maximum resilience** against network timeouts
+
+## 🎉 Welcome System
+
+When the bot is added to a server:
+
+1. **Automatic database entry** - Creates server configuration
+2. **Welcome message** - Sends setup instructions
+3. **Permission detection** - Adapts to available permissions
+4. **Fallback system** - Works even without audit log permissions
+
+### Welcome Message Features
+
+- **DM to user** who added the bot (if audit log available)
+- **Server channel fallback** if DM not possible
+- **Complete setup guide** with all commands
+- **Configuration instructions**
 
 ## 🚀 Deployment
 
@@ -162,6 +249,7 @@ The bot includes a robust retry system with exponential backoff:
    */30 * * * * cd /path/to/bot && npm run get-matches
    0 10 * * * cd /path/to/bot && npm run check-matches
    */5 * * * * cd /path/to/bot && npm run check-upcoming-matches
+   0 2 * * * cd /path/to/bot && npm run update-guild-stats
    ```
 
 ## 🛠️ Development
@@ -181,6 +269,9 @@ npm run check-matches
 
 # Test pre-match notifications
 npm run check-upcoming-matches
+
+# Update guild statistics
+npm run update-guild-stats
 ```
 
 ## 🔧 Troubleshooting
@@ -207,9 +298,21 @@ npm run check-upcoming-matches
    - Test with `npm run check-matches`
 
 4. **Script errors**
+
    - Ensure the project is built: `npm run build`
    - Check environment variables are set
    - Verify database connection
+
+5. **Welcome message not sent**
+
+   - Check if bot has "View Audit Log" permission
+   - Verify bot can send messages in server channels
+   - Check logs for permission errors
+
+6. **DM commands not working**
+   - Ensure commands are properly deployed
+   - Check bot has necessary intents
+   - Verify user has enabled DMs from server members
 
 ### Logs
 
@@ -219,6 +322,25 @@ The bot logs all activities to the console. Check for:
 - `[ERROR]` - Errors requiring attention
 - `[WARN]` - Warnings about potential issues
 
+## 📈 Performance Monitoring
+
+The bot includes comprehensive performance monitoring:
+
+### Metrics Tracked
+
+- **Command execution times**
+- **API response times**
+- **Database query performance**
+- **Memory usage patterns**
+- **Error frequency and types**
+
+### Optimization Features
+
+- **Smart caching** for tournament data
+- **Connection pooling** for database
+- **Rate limiting** for API calls
+- **Automatic cleanup** of old data
+
 ## 🤝 Contributing
 
 1. Fork the repository
@@ -226,3 +348,12 @@ The bot logs all activities to the console. Check for:
 3. Make your changes
 4. Test thoroughly
 5. Submit a pull request
+
+## 📄 Legal
+
+- [Terms of Service](docs/terms/index.html)
+- [Privacy Policy](docs/privacy/index.html)
+
+## 📞 Support
+
+For support, use the `/ticket` command in Discord or contact us via email.

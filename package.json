@@ -7,12 +7,13 @@
     "build": "tsc",
     "start": "ts-node scripts/deploy-commands.js && node dist/index.js",
     "dev": "ts-node src/index.ts",
-    "deploy-commands": "ts-node scripts/deploy-commands.js",
+    "deploy-commands": "ts-node scripts/deploy-commands-compiled.js",
     "check-matches": "ts-node src/scripts/check-matches.ts",
     "check-finished": "ts-node src/scripts/check-finished-matches.ts",
     "get-matches": "ts-node src/scripts/get-matches.ts",
     "check-upcoming": "ts-node src/scripts/check-upcoming-matches.ts",
-    "update-matches": "ts-node src/scripts/update-matches.ts"
+    "update-matches": "ts-node src/scripts/update-matches.ts",
+    "update-guild-stats": "ts-node src/scripts/update-guild-stats.ts"
   },
   "keywords": [
     "discord",

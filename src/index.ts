@@ -3,6 +3,7 @@ import {
   GatewayIntentBits,
   Collection,
   ActivityType,
+  AuditLogEvent,
 } from "discord.js";
 import { config } from "dotenv";
 import { PrismaClient } from "@prisma/client";
@@ -18,6 +19,7 @@ import {
 } from "./utils/timeoutUtils";
 import { getStreamingUrl } from "./utils/casters";
 import { PandaScoreService } from "./services/pandascore";
+import { handleTicketModalSubmit } from "./commands/ticket";
 
 config();
 
@@ -49,7 +51,9 @@ client.on("interactionCreate", async (interaction) => {
     if (!command) return;
 
     try {
-      await safeInteractionDefer(interaction);
+      if (interaction.commandName !== "ticket") {
+        await safeInteractionDefer(interaction);
+      }
 
       await command.execute(interaction);
     } catch (error) {
@@ -91,6 +95,21 @@ client.on("interactionCreate", async (interaction) => {
       await handleTournamentSelect(interaction);
     } catch (error) {
       logger.error("Error handling tournament select:", error);
+      await sendErrorMessage(
+        interaction,
+        ERROR_MESSAGES.GENERAL.INTERACTION_ERROR
+      );
+    }
+  }
+
+  if (
+    interaction.isModalSubmit() &&
+    interaction.customId.startsWith("ticket_modal_")
+  ) {
+    try {
+      await handleTicketModalSubmit(interaction);
+    } catch (error) {
+      logger.error("Error handling ticket modal submit:", error);
       await sendErrorMessage(
         interaction,
         ERROR_MESSAGES.GENERAL.INTERACTION_ERROR
@@ -373,12 +392,166 @@ client.on("error", (error) => {
   logger.error("Discord client error:", error);
 });
 
-// Gestionnaire pour quand le bot est supprimé d'un serveur
+client.on("guildCreate", async (guild) => {
+  try {
+    logger.info(`Bot added to guild: ${guild.name} (${guild.id})`);
+
+    await prisma.guildSettings.upsert({
+      where: { guildId: guild.id },
+      update: {
+        name: guild.name,
+        memberCount: guild.memberCount,
+        updatedAt: new Date(),
+      },
+      create: {
+        guildId: guild.id,
+        name: guild.name,
+        memberCount: guild.memberCount,
+        channelId: "",
+      },
+    });
+
+    let welcomeMessageSent = false;
+
+    const botMember = guild.members.me;
+    const hasAuditLogPermission = botMember?.permissions.has("ViewAuditLog");
+
+    if (hasAuditLogPermission) {
+      try {
+        const auditLogs = await guild.fetchAuditLogs({
+          type: AuditLogEvent.BotAdd,
+          limit: 1,
+        });
+
+        const botAddLog = auditLogs.entries.first();
+        if (botAddLog && botAddLog.executor) {
+          const executor = botAddLog.executor;
+
+          try {
+            await executor.send({
+              embeds: [
+                {
+                  color: 0x00ff00,
+                  title: "🎉 Merci d'avoir ajouté le Bot Karmine Corp !",
+                  description: `Le bot a été ajouté avec succès au serveur **${guild.name}** !`,
+                  fields: [
+                    {
+                      name: "⚙️ Configuration requise",
+                      value:
+                        "Pour que les messages automatiques fonctionnent correctement, vous devez configurer le bot avec la commande `/config`.",
+                      inline: false,
+                    },
+                    {
+                      name: "📋 Commandes disponibles",
+                      value:
+                        "• `/nextmatch` - Voir le prochain match\n• `/standing` - Voir les classements\n• `/ticket` - Créer un ticket de support\n• `/mytickets` - Voir vos tickets\n• `/config` - Configurer le bot",
+                      inline: false,
+                    },
+                    {
+                      name: "🔧 Configuration",
+                      value:
+                        "Utilisez `/config` pour définir :\n• Le canal d'annonce des matchs\n• Les rôles à mentionner\n• Les équipes à suivre\n• Les notifications avant-match et de score",
+                      inline: false,
+                    },
+                  ],
+                  footer: {
+                    text: "Bot Karmine Corp - Configuration automatique",
+                  },
+                  timestamp: new Date().toISOString(),
+                },
+              ],
+            });
+
+            logger.info(
+              `Welcome message sent to ${executor.tag} for guild ${guild.name}`
+            );
+            welcomeMessageSent = true;
+          } catch (dmError) {
+            logger.warn(`Could not send DM to ${executor.tag}:`, dmError);
+          }
+        }
+      } catch (auditError) {
+        logger.warn(
+          `Could not access audit logs for guild ${guild.name}:`,
+          auditError
+        );
+      }
+    } else {
+      logger.info(
+        `Bot does not have ViewAuditLog permission in guild ${guild.name}, will use fallback method`
+      );
+    }
+
+    if (!welcomeMessageSent) {
+      try {
+        const textChannels = guild.channels.cache.filter(
+          (channel) =>
+            channel.type === 0 &&
+            channel.permissionsFor(guild.members.me!)?.has("SendMessages")
+        );
+
+        if (textChannels.size > 0) {
+          const firstChannel = textChannels.first();
+          if (firstChannel && firstChannel.isTextBased()) {
+            await firstChannel.send({
+              embeds: [
+                {
+                  color: 0x00ff00,
+                  title: "🎉 Bot Karmine Corp ajouté avec succès !",
+                  description: `Le bot a été ajouté au serveur **${guild.name}** !`,
+                  fields: [
+                    {
+                      name: "⚙️ Configuration requise",
+                      value:
+                        "Pour que les messages automatiques fonctionnent correctement, un administrateur doit configurer le bot avec la commande `/config`.",
+                      inline: false,
+                    },
+                    {
+                      name: "📋 Commandes disponibles",
+                      value:
+                        "• `/nextmatch` - Voir le prochain match\n• `/standing` - Voir les classements\n• `/ticket` - Créer un ticket de support\n• `/mytickets` - Voir vos tickets\n• `/config` - Configurer le bot",
+                      inline: false,
+                    },
+                    {
+                      name: "🔧 Configuration",
+                      value:
+                        "Utilisez `/config` pour définir :\n• Le canal d'annonce des matchs\n• Les rôles à mentionner\n• Les équipes à suivre\n• Les notifications avant-match et de score",
+                      inline: false,
+                    },
+                  ],
+                  footer: {
+                    text: "Bot Karmine Corp - Configuration automatique",
+                  },
+                  timestamp: new Date().toISOString(),
+                },
+              ],
+            });
+
+            logger.info(
+              `Welcome message sent to channel #${firstChannel.name} in guild ${guild.name}`
+            );
+          }
+        }
+      } catch (channelError) {
+        logger.warn(
+          `Could not send welcome message to any channel in guild ${guild.name}:`,
+          channelError
+        );
+      }
+    }
+
+    logger.info(
+      `Guild settings created for guild: ${guild.name} (${guild.id})`
+    );
+  } catch (error) {
+    logger.error(`Error handling guild create for guild ${guild.id}:`, error);
+  }
+});
+
 client.on("guildDelete", async (guild) => {
   try {
     logger.info(`Bot removed from guild: ${guild.name} (${guild.id})`);
 
-    // Supprimer les paramètres du serveur de la base de données
     await prisma.guildSettings.deleteMany({
       where: {
         guildId: guild.id,

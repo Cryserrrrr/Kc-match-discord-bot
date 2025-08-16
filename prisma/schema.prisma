@@ -43,11 +43,92 @@ model StandingCache {
 
 model GuildSettings {
   guildId                    String @id
+  name                       String // Nom du serveur Discord
+  memberCount                Int    @default(0) // Nombre de membres
   channelId                  String // Discord channel ID
   pingRoles                  String[] @default([]) // Array of role IDs to ping
   filteredTeams              String[] @default([]) // Array of team IDs to filter matches
   enablePreMatchNotifications Boolean @default(true) // Enable/disable 30-minute pre-match notifications
   enableScoreNotifications    Boolean @default(true) // Enable/disable score notifications
+  joinedAt                   DateTime @default(now())
+  updatedAt                  DateTime @updatedAt
+
+  // Relations
+  commandStats    CommandStat[]
+  tickets         Ticket[]
+  performanceMetrics PerformanceMetric[]
 
   @@map("guild_settings")
+}
+
+// Nouveaux modèles pour les statistiques
+
+model CommandStat {
+  id        String   @id @default(cuid())
+  guildId   String   // Discord Guild ID (peut être null pour les stats globales)
+  commandName String // Nom de la commande (nextmatch, standing, etc.)
+  userId    String   // Discord User ID
+  username  String   // Nom d'utilisateur Discord
+  teamArg   String?  // Argument équipe utilisé (pour les stats de popularité)
+  executedAt DateTime @default(now())
+
+  // Relations
+  guild     GuildSettings?   @relation(fields: [guildId], references: [guildId])
+
+  @@map("command_stats")
+}
+
+model Ticket {
+  id          String   @id @default(cuid())
+  guildId     String   // Discord Guild ID
+  userId      String   // Discord User ID
+  username    String   // Nom d'utilisateur Discord
+  type        TicketType // Type de ticket (bug, amélioration)
+  status      TicketStatus @default(OPEN) // Statut du ticket
+  description String?  // Description optionnelle
+  answer      String?  // Réponse à la demande
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // Relations
+  guild       GuildSettings    @relation(fields: [guildId], references: [guildId])
+
+  @@map("tickets")
+}
+
+model PerformanceMetric {
+  id              String   @id @default(cuid())
+  guildId         String?  // Discord Guild ID (peut être null pour les métriques globales)
+  commandName     String   // Nom de la commande
+  responseTime    Int      // Temps de réponse en millisecondes
+  success         Boolean  // Si la commande s'est exécutée avec succès
+  errorMessage    String?  // Message d'erreur si échec
+  executedAt      DateTime @default(now())
+
+  // Relations
+  guild           GuildSettings?   @relation(fields: [guildId], references: [guildId])
+
+  @@map("performance_metrics")
+}
+
+model TeamPopularity {
+  id          String   @id @default(cuid())
+  teamId      String   // ID de l'équipe (KC, KCB, etc.)
+  teamName    String   // Nom de l'équipe
+  usageCount  Int      @default(0) // Nombre d'utilisations
+  lastUsed    DateTime @default(now())
+
+  @@map("team_popularity")
+}
+
+enum TicketType {
+  BUG
+  IMPROVEMENT
+}
+
+enum TicketStatus {
+  OPEN
+  IN_PROGRESS
+  RESOLVED
+  CLOSED
 } 

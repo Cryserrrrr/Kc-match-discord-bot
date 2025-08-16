@@ -27,6 +27,7 @@ import {
   showScoreConfig,
   handleScoreToggle,
 } from "../handlers/configHandlers";
+import { StatsManager } from "../utils/statsManager";
 
 // Variables globales
 const activeConfigSessions = new Map<string, any>();
@@ -123,15 +124,31 @@ function createMainMenu(): StringSelectMenuBuilder {
     );
 }
 
-// Fonction principale
 export async function execute(interaction: CommandInteraction) {
+  const startTime = Date.now();
+
   try {
     const userId = interaction.user.id;
-    const guildId = interaction.guildId!;
+    const guildId = interaction.guildId;
+
+    if (!guildId) {
+      await interaction.reply({
+        content:
+          "❌ Cette commande ne peut être utilisée que dans un serveur Discord.",
+        flags: 64,
+      });
+      return;
+    }
 
     const guildSettings = await prisma.guildSettings.findUnique({
       where: { guildId },
     });
+
+    await StatsManager.ensureGuildExists(
+      guildId,
+      interaction.guild?.name,
+      interaction.guild?.memberCount
+    );
     const mainEmbed = createMainEmbed(guildSettings);
     const mainMenu = createMainMenu();
     const mainRow =
@@ -244,6 +261,29 @@ export async function execute(interaction: CommandInteraction) {
       content:
         "Une erreur s'est produite lors de l'ouverture de la configuration.",
     });
+
+    await StatsManager.recordCommandExecution({
+      guildId: interaction.guildId!,
+      commandName: "config",
+      userId: interaction.user.id,
+      username: interaction.user.username,
+      startTime,
+      success: false,
+      errorMessage: error instanceof Error ? error.message : "Unknown error",
+    });
+  }
+
+  try {
+    await StatsManager.recordCommandExecution({
+      guildId: interaction.guildId!,
+      commandName: "config",
+      userId: interaction.user.id,
+      username: interaction.user.username,
+      startTime,
+      success: true,
+    });
+  } catch (statsError) {
+    logger.error("Error recording config command stats:", statsError);
   }
 }
 
