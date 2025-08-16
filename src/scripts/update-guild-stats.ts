@@ -7,7 +7,7 @@ import { StatsManager } from "../utils/statsManager";
 config();
 
 const client = new Client({
-  intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMembers],
+  intents: [GatewayIntentBits.Guilds],
 });
 
 async function updateGuildStats() {
@@ -18,17 +18,33 @@ async function updateGuildStats() {
 
     for (const [guildId, guild] of guilds) {
       try {
+        const fetchedGuild = await guild.fetch();
+
         await StatsManager.ensureGuildExists(
           guildId,
-          guild.name,
-          guild.memberCount
+          fetchedGuild.name,
+          fetchedGuild.memberCount
         );
 
         logger.info(
-          `Updated stats for guild: ${guild.name} (${guild.memberCount} members)`
+          `Updated stats for guild: ${fetchedGuild.name} (${fetchedGuild.memberCount} members)`
         );
       } catch (error) {
         logger.error(`Error updating stats for guild ${guildId}:`, error);
+
+        try {
+          await StatsManager.ensureGuildExists(
+            guildId,
+            guild.name,
+            guild.memberCount || 0
+          );
+          logger.info(`Updated stats for guild ${guildId} using cached data`);
+        } catch (fallbackError) {
+          logger.error(
+            `Fallback update failed for guild ${guildId}:`,
+            fallbackError
+          );
+        }
       }
     }
 
