@@ -32,9 +32,106 @@ async function updateGuildStats() {
       }
     }
 
+    await fillMissingGuildData();
+
     logger.info("Guild stats update completed");
   } catch (error) {
     logger.error("Error in updateGuildStats:", error);
+  }
+}
+
+async function fillMissingGuildData() {
+  try {
+    logger.info("Checking for guilds with missing data...");
+
+    const [nullNamesCount, nullUpdatedAtCount, nullMemberCountCount] =
+      await Promise.all([
+        prisma.$queryRaw`SELECT COUNT(*) as count FROM guild_settings WHERE name IS NULL`,
+        prisma.$queryRaw`SELECT COUNT(*) as count FROM guild_settings WHERE "updatedAt" IS NULL`,
+        prisma.$queryRaw`SELECT COUNT(*) as count FROM guild_settings WHERE "memberCount" IS NULL`,
+      ]);
+
+    const totalMissingData =
+      (nullNamesCount as any)[0]?.count +
+      (nullUpdatedAtCount as any)[0]?.count +
+      (nullMemberCountCount as any)[0]?.count;
+
+    logger.info(
+      `Found ${totalMissingData} total missing data fields across all guilds`
+    );
+
+    if (totalMissingData === 0) {
+      logger.info("No guilds with missing data found. All data is up to date.");
+      return;
+    }
+
+    if ((nullNamesCount as any)[0]?.count > 0) {
+      const result = await prisma.$executeRaw`
+        UPDATE guild_settings 
+        SET name = 'Unknown Guild' 
+        WHERE name IS NULL
+      `;
+      logger.info(`Updated ${result} guilds with missing names`);
+    }
+
+    if ((nullUpdatedAtCount as any)[0]?.count > 0) {
+      const result = await prisma.$executeRaw`
+        UPDATE guild_settings 
+        SET "updatedAt" = NOW() 
+        WHERE "updatedAt" IS NULL
+      `;
+      logger.info(`Updated ${result} guilds with missing updatedAt`);
+    }
+
+    if ((nullMemberCountCount as any)[0]?.count > 0) {
+      const result = await prisma.$executeRaw`
+        UPDATE guild_settings 
+        SET "memberCount" = 0 
+        WHERE "memberCount" IS NULL
+      `;
+      logger.info(`Updated ${result} guilds with missing memberCount`);
+    }
+
+    const [
+      remainingNullNames,
+      remainingNullUpdatedAt,
+      remainingNullMemberCount,
+    ] = await Promise.all([
+      prisma.$queryRaw`SELECT COUNT(*) as count FROM guild_settings WHERE name IS NULL`,
+      prisma.$queryRaw`SELECT COUNT(*) as count FROM guild_settings WHERE "updatedAt" IS NULL`,
+      prisma.$queryRaw`SELECT COUNT(*) as count FROM guild_settings WHERE "memberCount" IS NULL`,
+    ]);
+
+    logger.info("Verification results:");
+    logger.info(
+      `- Guilds with null name: ${(remainingNullNames as any)[0]?.count}`
+    );
+    logger.info(
+      `- Guilds with null updatedAt: ${
+        (remainingNullUpdatedAt as any)[0]?.count
+      }`
+    );
+    logger.info(
+      `- Guilds with null memberCount: ${
+        (remainingNullMemberCount as any)[0]?.count
+      }`
+    );
+
+    const totalRemaining =
+      (remainingNullNames as any)[0]?.count +
+      (remainingNullUpdatedAt as any)[0]?.count +
+      (remainingNullMemberCount as any)[0]?.count;
+
+    if (totalRemaining === 0) {
+      logger.info("✅ All missing guild data has been successfully filled!");
+    } else {
+      logger.warn(
+        "⚠️ Some guilds still have missing data. Manual intervention may be required."
+      );
+    }
+  } catch (error) {
+    logger.error("Error filling missing guild data:", error);
+    throw error;
   }
 }
 

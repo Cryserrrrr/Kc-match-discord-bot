@@ -14,8 +14,8 @@ CREATE TYPE "TicketStatus" AS ENUM ('OPEN', 'IN_PROGRESS', 'RESOLVED', 'CLOSED')
 -- AlterTable
 ALTER TABLE "guild_settings" ADD COLUMN     "joinedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
 ADD COLUMN     "memberCount" INTEGER NOT NULL DEFAULT 0,
-ADD COLUMN     "name" TEXT NOT NULL,
-ADD COLUMN     "updatedAt" TIMESTAMP(3) NOT NULL;
+ADD COLUMN     "name" TEXT,
+ADD COLUMN     "updatedAt" TIMESTAMP(3);
 
 -- CreateTable
 CREATE TABLE "command_stats" (
