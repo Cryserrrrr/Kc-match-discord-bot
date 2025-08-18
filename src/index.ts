@@ -31,6 +31,57 @@ const client = new Client({
 
 client.commands = new Collection();
 
+// Constants for repeated content
+const COMMANDS_LIST =
+  "• `/nextmatch` - Voir le prochain match\n• `/standing` - Voir les classements\n• `/ticket` - Créer un ticket de support\n• `/mytickets` - Voir vos tickets\n• `/config` - Configurer le bot";
+
+const CONFIG_DESCRIPTION =
+  "Utilisez `/config` pour définir :\n• Le canal d'annonce des matchs\n• Les rôles à mentionner\n• Les équipes à suivre\n• Les notifications avant-match, de score et de mise à jour";
+
+const createWelcomeEmbed = (guildName: string, isDM: boolean = false) => ({
+  color: 0x00ff00,
+  title: isDM
+    ? "🎉 Merci d'avoir ajouté le Bot Karmine Corp !"
+    : "🎉 Bot Karmine Corp ajouté avec succès !",
+  description: `Le bot a été ajouté ${
+    isDM ? "avec succès au serveur" : "au serveur"
+  } **${guildName}** !`,
+  fields: [
+    {
+      name: "⚙️ Configuration requise",
+      value: isDM
+        ? "Pour que les messages automatiques fonctionnent correctement, vous devez configurer le bot avec la commande `/config`."
+        : "Pour que les messages automatiques fonctionnent correctement, un administrateur doit configurer le bot avec la commande `/config`.",
+      inline: false,
+    },
+    {
+      name: "📋 Commandes disponibles",
+      value: COMMANDS_LIST,
+      inline: false,
+    },
+    {
+      name: "🔧 Configuration",
+      value: CONFIG_DESCRIPTION,
+      inline: false,
+    },
+  ],
+  footer: {
+    text: "Bot Karmine Corp - Configuration automatique",
+  },
+  timestamp: new Date().toISOString(),
+});
+
+const handleShutdown = async () => {
+  logger.info("Shutting down bot...");
+  try {
+    await prisma.$disconnect();
+    await client.destroy();
+  } catch (error) {
+    logger.error("Error during shutdown:", error);
+  }
+  process.exit(0);
+};
+
 client.once("ready", async () => {
   logger.info(`Bot logged in as ${client.user?.tag}`);
 
@@ -429,37 +480,7 @@ client.on("guildCreate", async (guild) => {
 
           try {
             await executor.send({
-              embeds: [
-                {
-                  color: 0x00ff00,
-                  title: "🎉 Merci d'avoir ajouté le Bot Karmine Corp !",
-                  description: `Le bot a été ajouté avec succès au serveur **${guild.name}** !`,
-                  fields: [
-                    {
-                      name: "⚙️ Configuration requise",
-                      value:
-                        "Pour que les messages automatiques fonctionnent correctement, vous devez configurer le bot avec la commande `/config`.",
-                      inline: false,
-                    },
-                    {
-                      name: "📋 Commandes disponibles",
-                      value:
-                        "• `/nextmatch` - Voir le prochain match\n• `/standing` - Voir les classements\n• `/ticket` - Créer un ticket de support\n• `/mytickets` - Voir vos tickets\n• `/config` - Configurer le bot",
-                      inline: false,
-                    },
-                    {
-                      name: "🔧 Configuration",
-                      value:
-                        "Utilisez `/config` pour définir :\n• Le canal d'annonce des matchs\n• Les rôles à mentionner\n• Les équipes à suivre\n• Les notifications avant-match et de score",
-                      inline: false,
-                    },
-                  ],
-                  footer: {
-                    text: "Bot Karmine Corp - Configuration automatique",
-                  },
-                  timestamp: new Date().toISOString(),
-                },
-              ],
+              embeds: [createWelcomeEmbed(guild.name, true)],
             });
 
             logger.info(
@@ -494,37 +515,7 @@ client.on("guildCreate", async (guild) => {
           const firstChannel = textChannels.first();
           if (firstChannel && firstChannel.isTextBased()) {
             await firstChannel.send({
-              embeds: [
-                {
-                  color: 0x00ff00,
-                  title: "🎉 Bot Karmine Corp ajouté avec succès !",
-                  description: `Le bot a été ajouté au serveur **${guild.name}** !`,
-                  fields: [
-                    {
-                      name: "⚙️ Configuration requise",
-                      value:
-                        "Pour que les messages automatiques fonctionnent correctement, un administrateur doit configurer le bot avec la commande `/config`.",
-                      inline: false,
-                    },
-                    {
-                      name: "📋 Commandes disponibles",
-                      value:
-                        "• `/nextmatch` - Voir le prochain match\n• `/standing` - Voir les classements\n• `/ticket` - Créer un ticket de support\n• `/mytickets` - Voir vos tickets\n• `/config` - Configurer le bot",
-                      inline: false,
-                    },
-                    {
-                      name: "🔧 Configuration",
-                      value:
-                        "Utilisez `/config` pour définir :\n• Le canal d'annonce des matchs\n• Les rôles à mentionner\n• Les équipes à suivre\n• Les notifications avant-match et de score",
-                      inline: false,
-                    },
-                  ],
-                  footer: {
-                    text: "Bot Karmine Corp - Configuration automatique",
-                  },
-                  timestamp: new Date().toISOString(),
-                },
-              ],
+              embeds: [createWelcomeEmbed(guild.name, false)],
             });
 
             logger.info(
@@ -567,25 +558,11 @@ client.on("guildDelete", async (guild) => {
 });
 
 process.on("SIGINT", async () => {
-  logger.info("Shutting down bot...");
-  try {
-    await prisma.$disconnect();
-    await client.destroy();
-  } catch (error) {
-    logger.error("Error during shutdown:", error);
-  }
-  process.exit(0);
+  await handleShutdown();
 });
 
 process.on("SIGTERM", async () => {
-  logger.info("Shutting down bot...");
-  try {
-    await prisma.$disconnect();
-    await client.destroy();
-  } catch (error) {
-    logger.error("Error during shutdown:", error);
-  }
-  process.exit(0);
+  await handleShutdown();
 });
 
 process.on("uncaughtException", (error) => {

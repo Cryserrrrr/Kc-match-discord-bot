@@ -9,11 +9,10 @@
     "dev": "ts-node src/index.ts",
     "deploy-commands": "ts-node scripts/deploy-commands-compiled.js",
     "check-matches": "ts-node src/scripts/check-matches.ts",
-    "check-finished": "ts-node src/scripts/check-finished-matches.ts",
     "get-matches": "ts-node src/scripts/get-matches.ts",
-    "check-upcoming": "ts-node src/scripts/check-upcoming-matches.ts",
     "update-matches": "ts-node src/scripts/update-matches.ts",
-    "update-guild-stats": "ts-node src/scripts/update-guild-stats.ts"
+    "update-guild-stats": "ts-node src/scripts/update-guild-stats.ts",
+    "send-changelog": "ts-node src/scripts/send-changelog.ts"
   },
   "keywords": [
     "discord",

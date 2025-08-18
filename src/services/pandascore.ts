@@ -143,6 +143,72 @@ export class PandaScoreService {
     }
   }
 
+  async getKarmineCorpLiveMatches(): Promise<PandaScoreMatch[]> {
+    const kcTeamIds = [
+      TEAM_IDS.LOL.KC,
+      TEAM_IDS.LOL.KCB,
+      TEAM_IDS.LOL.KCBS,
+      TEAM_IDS.VAL.KC,
+      TEAM_IDS.VAL.KCGC,
+      TEAM_IDS.VAL.KCBS,
+      TEAM_IDS.RL.KC,
+    ];
+
+    try {
+      const matches = await this.makeRequest("/matches/running", {
+        "filter[opponent_id]": kcTeamIds.join(","),
+        sort: "begin_at",
+        per_page: 100,
+        page: 1,
+      });
+
+      const karmineMatches = matches.filter((match: PandaScoreMatch) =>
+        match.opponents.some((opponent) =>
+          kcTeamIds.includes(opponent.opponent.id.toString())
+        )
+      );
+
+      logger.info(`Found ${karmineMatches.length} live Karmine Corp matches`);
+      return karmineMatches;
+    } catch (error) {
+      logger.error("Error fetching live Karmine Corp matches:", error);
+      throw error;
+    }
+  }
+
+  async getKarmineCorpPastMatches(): Promise<PandaScoreMatch[]> {
+    const kcTeamIds = [
+      TEAM_IDS.LOL.KC,
+      TEAM_IDS.LOL.KCB,
+      TEAM_IDS.LOL.KCBS,
+      TEAM_IDS.VAL.KC,
+      TEAM_IDS.VAL.KCGC,
+      TEAM_IDS.VAL.KCBS,
+      TEAM_IDS.RL.KC,
+    ];
+
+    try {
+      const matches = await this.makeRequest("/matches/past", {
+        "filter[opponent_id]": kcTeamIds.join(","),
+        sort: "-begin_at",
+        per_page: 100,
+        page: 1,
+      });
+
+      const karmineMatches = matches.filter((match: PandaScoreMatch) =>
+        match.opponents.some((opponent) =>
+          kcTeamIds.includes(opponent.opponent.id.toString())
+        )
+      );
+
+      logger.info(`Found ${karmineMatches.length} past Karmine Corp matches`);
+      return karmineMatches;
+    } catch (error) {
+      logger.error("Error fetching past Karmine Corp matches:", error);
+      throw error;
+    }
+  }
+
   getMatchScore(match: PandaScoreMatch): string | null {
     if (!match.results || match.results.length < 2) {
       return null;

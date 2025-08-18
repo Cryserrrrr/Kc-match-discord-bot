@@ -49,14 +49,7 @@ export async function sendNotificationToGuild(
     ) as TextChannel;
 
     if (!channel) {
-      const availableChannels = guild.channels.cache
-        .filter((ch) => ch.type === ChannelType.GuildText)
-        .map((ch) => `${ch.name} (${ch.id})`)
-        .join(", ");
-
-      logger.warn(
-        `Channel ${guildSettings.channelId} not found in guild ${guildSettings.guildId}. Available text channels: ${availableChannels}`
-      );
+      logger.warn(`Channel not found in guild ${guildSettings.guildId}`);
       return false;
     }
 
@@ -95,7 +88,7 @@ export async function sendMatchNotification(
   guildSettings: GuildSettings,
   match: MatchData,
   embed: any,
-  notificationType: "prematch" | "score" | "daily"
+  notificationType: "score" | "daily"
 ): Promise<boolean> {
   const pingRoles = getPingRoles(guildSettings);
   const roleMentions = formatRoleMentions(pingRoles);
@@ -106,9 +99,6 @@ export async function sendMatchNotification(
   }
 
   switch (notificationType) {
-    case "prematch":
-      message += "⏰ **Match dans 30 minutes !** ⏰";
-      break;
     case "score":
       message += "🏁 **Match terminé !** 🏁";
       break;
@@ -147,7 +137,7 @@ export async function sendMatchNotificationsToMultipleGuilds(
   guildSettingsList: GuildSettings[],
   match: MatchData,
   embed: any,
-  notificationType: "prematch" | "score" | "daily"
+  notificationType: "score" | "daily"
 ): Promise<{ success: number; failed: number }> {
   const results = await Promise.allSettled(
     guildSettingsList.map((settings) =>

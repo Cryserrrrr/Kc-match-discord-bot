@@ -26,6 +26,8 @@ import {
   handlePrematchToggle,
   showScoreConfig,
   handleScoreToggle,
+  showUpdateConfig,
+  handleUpdateToggle,
 } from "../handlers/configHandlers";
 import { StatsManager } from "../utils/statsManager";
 
@@ -62,6 +64,10 @@ function createMainEmbed(guildSettings: any): EmbedBuilder {
       (guildSettings as any).enableScoreNotifications === true
         ? "✅ Activé"
         : "❌ Désactivé";
+    const updateEnabled =
+      (guildSettings as any)?.enableUpdateNotifications !== false
+        ? "✅ Activé"
+        : "❌ Désactivé";
     const filteredTeams = (guildSettings as any).filteredTeams || [];
     const teamsStatus =
       filteredTeams.length === 0
@@ -77,6 +83,11 @@ function createMainEmbed(guildSettings: any): EmbedBuilder {
         inline: true,
       },
       { name: "🏆 Notifications de score", value: scoreEnabled, inline: true },
+      {
+        name: "📢 Notifications de mise à jour",
+        value: updateEnabled,
+        inline: true,
+      },
       { name: "🏆 Filtre d'équipes", value: teamsStatus, inline: true }
     );
   } else {
@@ -113,14 +124,23 @@ function createMainMenu(): StringSelectMenuBuilder {
         .setEmoji("🏆"),
       new StringSelectMenuOptionBuilder()
         .setLabel("🔔 Notifications avant-match")
-        .setDescription("Activer/désactiver les notifications 30min avant")
+        .setDescription(
+          "Activer/désactiver les notifications au lancement du match"
+        )
         .setValue("prematch")
         .setEmoji("🔔"),
       new StringSelectMenuOptionBuilder()
         .setLabel("🏆 Notifications de score")
         .setDescription("Activer/désactiver les notifications de fin de match")
         .setValue("score")
-        .setEmoji("🏆")
+        .setEmoji("🏆"),
+      new StringSelectMenuOptionBuilder()
+        .setLabel("📢 Notifications de mise à jour")
+        .setDescription(
+          "Activer/désactiver les notifications de mise à jour du bot"
+        )
+        .setValue("update")
+        .setEmoji("📢")
     );
 }
 
@@ -199,6 +219,10 @@ export async function execute(interaction: CommandInteraction) {
           await handleScoreToggle(i, guildId, true);
         } else if (customId === "score_disable") {
           await handleScoreToggle(i, guildId, false);
+        } else if (customId === "update_enable") {
+          await handleUpdateToggle(i, guildId, true);
+        } else if (customId === "update_disable") {
+          await handleUpdateToggle(i, guildId, false);
         }
       } catch (error: any) {
         if (
@@ -307,6 +331,9 @@ async function handleMainMenuSelection(
       break;
     case "score":
       await showScoreConfig(interaction, guildSettings);
+      break;
+    case "update":
+      await showUpdateConfig(interaction, guildSettings);
       break;
   }
 }

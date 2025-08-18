@@ -24,7 +24,7 @@ model Match {
   hasBracket      Boolean  @default(false)
   numberOfGames   Int      // Number of games in the match
   beginAt         DateTime // Match date/time
-  status          String   @default("scheduled") // scheduled, pre-announced, live, finished, announced
+  status          String   @default("not_started") // not_started, live, finished, announced, canceled
   score           String?  // Match score (e.g., "2-1", "3-0")
   createdAt       DateTime @default(now())
 
@@ -43,15 +43,16 @@ model StandingCache {
 
 model GuildSettings {
   guildId                    String @id
-  name                       String // Nom du serveur Discord
-  memberCount                Int    @default(0) // Nombre de membres
+  name                       String? // Discord server name
+  memberCount                Int    @default(0) // Number of members
   channelId                  String // Discord channel ID
   pingRoles                  String[] @default([]) // Array of role IDs to ping
   filteredTeams              String[] @default([]) // Array of team IDs to filter matches
   enablePreMatchNotifications Boolean @default(true) // Enable/disable 30-minute pre-match notifications
   enableScoreNotifications    Boolean @default(true) // Enable/disable score notifications
+  enableUpdateNotifications   Boolean @default(true) // Enable/disable bot update notifications
   joinedAt                   DateTime @default(now())
-  updatedAt                  DateTime @updatedAt
+  updatedAt                  DateTime? @updatedAt
 
   // Relations
   commandStats    CommandStat[]
@@ -61,15 +62,15 @@ model GuildSettings {
   @@map("guild_settings")
 }
 
-// Nouveaux modèles pour les statistiques
+// New models for statistics
 
 model CommandStat {
   id        String   @id @default(cuid())
-  guildId   String   // Discord Guild ID (peut être null pour les stats globales)
-  commandName String // Nom de la commande (nextmatch, standing, etc.)
+  guildId   String   // Discord Guild ID (can be null for global stats)
+  commandName String // Command name (nextmatch, standing, etc.)
   userId    String   // Discord User ID
-  username  String   // Nom d'utilisateur Discord
-  teamArg   String?  // Argument équipe utilisé (pour les stats de popularité)
+  username  String   // Discord username
+  teamArg   String?  // Team argument used (for popularity stats)
   executedAt DateTime @default(now())
 
   // Relations
@@ -82,11 +83,11 @@ model Ticket {
   id          String   @id @default(cuid())
   guildId     String   // Discord Guild ID
   userId      String   // Discord User ID
-  username    String   // Nom d'utilisateur Discord
-  type        TicketType // Type de ticket (bug, amélioration)
-  status      TicketStatus @default(OPEN) // Statut du ticket
-  description String?  // Description optionnelle
-  answer      String?  // Réponse à la demande
+  username    String   // Discord username
+  type        TicketType // Ticket type (bug, improvement)
+  status      TicketStatus @default(OPEN) // Ticket status
+  description String?  // Optional description
+  answer      String?  // Response to the request
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
@@ -98,11 +99,11 @@ model Ticket {
 
 model PerformanceMetric {
   id              String   @id @default(cuid())
-  guildId         String?  // Discord Guild ID (peut être null pour les métriques globales)
-  commandName     String   // Nom de la commande
-  responseTime    Int      // Temps de réponse en millisecondes
-  success         Boolean  // Si la commande s'est exécutée avec succès
-  errorMessage    String?  // Message d'erreur si échec
+  guildId         String?  // Discord Guild ID (can be null for global metrics)
+  commandName     String   // Command name
+  responseTime    Int      // Response time in milliseconds
+  success         Boolean  // Whether the command executed successfully
+  errorMessage    String?  // Error message if failed
   executedAt      DateTime @default(now())
 
   // Relations
@@ -113,12 +114,21 @@ model PerformanceMetric {
 
 model TeamPopularity {
   id          String   @id @default(cuid())
-  teamId      String   // ID de l'équipe (KC, KCB, etc.)
-  teamName    String   // Nom de l'équipe
-  usageCount  Int      @default(0) // Nombre d'utilisations
+  teamId      String   // Team ID (KC, KCB, etc.)
+  teamName    String   // Team name
+  usageCount  Int      @default(0) // Number of uses
   lastUsed    DateTime @default(now())
 
   @@map("team_popularity")
+}
+
+model ChangeLog {
+  id          String   @id @default(cuid())
+  text        String   // Text of the change
+  status      String   // Status of the change (new, announced)
+  createdAt   DateTime @default(now())
+
+  @@map("change_logs")
 }
 
 enum TicketType {

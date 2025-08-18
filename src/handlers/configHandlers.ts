@@ -814,3 +814,90 @@ export async function handleScoreToggle(
     `Guild ${guildId} ${enabled ? "enabled" : "disabled"} score notifications`
   );
 }
+
+export async function showUpdateConfig(interaction: any, guildSettings: any) {
+  const updateEnabled =
+    (guildSettings as any)?.enableUpdateNotifications !== false;
+
+  const embed = new EmbedBuilder()
+    .setTitle("📢 Configuration des Notifications de Mise à Jour")
+    .setDescription(
+      "Les notifications de mise à jour sont envoyées lors de changements du bot (nouvelles fonctionnalités, corrections, etc.).\n\n" +
+        "**État actuel :** " +
+        (updateEnabled ? "✅ Activé" : "❌ Désactivé")
+    )
+    .setColor(updateEnabled ? 0x00ff00 : 0xff0000);
+
+  const enableButton = new ButtonBuilder()
+    .setCustomId("update_enable")
+    .setLabel("✅ Activer")
+    .setStyle(ButtonStyle.Success)
+    .setDisabled(updateEnabled);
+
+  const disableButton = new ButtonBuilder()
+    .setCustomId("update_disable")
+    .setLabel("❌ Désactiver")
+    .setStyle(ButtonStyle.Danger)
+    .setDisabled(!updateEnabled);
+
+  await safeInteractionUpdate(interaction, {
+    embeds: [embed],
+    components: [
+      createActionRow([enableButton, disableButton, createBackButton()]),
+    ],
+  });
+}
+
+export async function handleUpdateToggle(
+  interaction: any,
+  guildId: string,
+  enabled: boolean
+) {
+  try {
+    await interaction.deferUpdate();
+  } catch (error: any) {
+    if (
+      error.code === 10062 ||
+      error.message?.includes("Unknown interaction")
+    ) {
+      logger.warn("Interaction expired during update toggle, skipping");
+      return;
+    }
+    logger.error("Error deferring update toggle update:", error);
+    return;
+  }
+
+  await prisma.guildSettings.update({
+    where: { guildId },
+    data: { enableUpdateNotifications: enabled },
+  });
+
+  const embed = new EmbedBuilder()
+    .setColor(enabled ? "#00ff00" : "#ff0000")
+    .setTitle("📢 Configuration des notifications de mise à jour")
+    .setDescription(
+      enabled
+        ? "✅ Les notifications de mise à jour sont maintenant **activées**"
+        : "❌ Les notifications de mise à jour sont maintenant **désactivées**"
+    )
+    .addFields({
+      name: "📋 Détails",
+      value: enabled
+        ? "• Les notifications seront envoyées lors de mises à jour du bot"
+        : "• Aucune notification de mise à jour ne sera envoyée\n• Les autres notifications restent actives",
+    })
+    .setTimestamp()
+    .setFooter({
+      text: `Configuré par ${interaction.user.tag}`,
+      iconURL: interaction.user.displayAvatarURL(),
+    });
+
+  await safeInteractionUpdate(interaction, {
+    embeds: [embed],
+    components: [createActionRow([createBackButton()])],
+  });
+
+  logger.info(
+    `Guild ${guildId} ${enabled ? "enabled" : "disabled"} update notifications`
+  );
+}

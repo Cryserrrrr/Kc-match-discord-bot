@@ -7,6 +7,7 @@ export interface GuildSettings {
   pingRoles?: string[];
   enablePreMatchNotifications?: boolean;
   enableScoreNotifications?: boolean;
+  enableUpdateNotifications?: boolean;
 }
 
 export function isTeamAllowed(
@@ -64,6 +65,12 @@ export function isScoreNotificationsEnabled(
   guildSettings: GuildSettings | null
 ): boolean {
   return guildSettings?.enableScoreNotifications === true;
+}
+
+export function isUpdateNotificationsEnabled(
+  guildSettings: GuildSettings | null
+): boolean {
+  return guildSettings?.enableUpdateNotifications !== false;
 }
 
 export function getPingRoles(guildSettings: GuildSettings | null): string[] {

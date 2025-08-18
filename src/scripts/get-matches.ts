@@ -10,8 +10,15 @@ import {
   TextChannel,
   ChannelType,
 } from "discord.js";
-import { createMatchEmbed } from "../utils/embedBuilder";
+import { createMatchEmbed, createScoreEmbed } from "../utils/embedBuilder";
 import { formatRoleMentions } from "../utils/roleMentions";
+import {
+  GuildSettings,
+  isTeamAllowed,
+  isScoreNotificationsEnabled,
+  getPingRoles,
+} from "../utils/guildFilters";
+import { sendMatchNotification } from "../utils/notificationUtils";
 
 config();
 
@@ -143,16 +150,31 @@ async function checkAndSaveMatches(prisma: PrismaClient) {
   const pandaScoreService = new PandaScoreService();
 
   try {
-    const matches = await withRetry(async () => {
-      const matchesPromise = pandaScoreService.getKarmineCorpMatches();
-      const timeoutPromise = new Promise((_, reject) =>
-        setTimeout(() => reject(new Error("PandaScore API timeout")), 60000)
-      );
+    const [upcomingMatches, liveMatches, pastMatches] = await withRetry(
+      async () => {
+        const [upcomingPromise, livePromise, pastPromise] = [
+          pandaScoreService.getKarmineCorpMatches(),
+          pandaScoreService.getKarmineCorpLiveMatches(),
+          pandaScoreService.getKarmineCorpPastMatches(),
+        ];
 
-      return (await Promise.race([matchesPromise, timeoutPromise])) as any[];
-    });
+        const timeoutPromise = new Promise((_, reject) =>
+          setTimeout(() => reject(new Error("PandaScore API timeout")), 60000)
+        );
 
-    for (const match of matches) {
+        return Promise.race([
+          Promise.all([upcomingPromise, livePromise, pastPromise]),
+          timeoutPromise,
+        ]) as Promise<[any[], any[], any[]]>;
+      }
+    );
+
+    const allMatches = [...upcomingMatches, ...liveMatches, ...pastMatches];
+    logger.info(
+      `📊 Total matches found: ${allMatches.length} (${upcomingMatches.length} upcoming, ${liveMatches.length} live, ${pastMatches.length} past)`
+    );
+
+    for (const match of allMatches) {
       await withRetry(
         async () => {
           try {
@@ -180,19 +202,37 @@ async function checkAndSaveMatches(prisma: PrismaClient) {
                   tournamentName: match.tournament.name,
                   numberOfGames: match.number_of_games,
                   beginAt: new Date(match.scheduled_at),
-                  status: "scheduled",
+                  status: match.status,
                   tournamentId: match.tournament.id.toString(),
                   hasBracket: match.tournament.has_bracket,
                 },
               });
 
               logger.info(
-                `✅ New match added to database: ${dbMatch.kcTeam} vs ${dbMatch.opponent}`
+                `✅ New match added to database: ${dbMatch.kcTeam} vs ${dbMatch.opponent} (status: ${dbMatch.status})`
               );
+
+              if (match.status === "live") {
+                logger.info(
+                  `🚨 Last minute announcement for new live match ${dbMatch.id}: ${dbMatch.kcTeam} vs ${dbMatch.opponent}`
+                );
+
+                try {
+                  const guildSettings = await getGuildSettings();
+                  if (guildSettings.length > 0) {
+                    await sendLastMinuteNotification(dbMatch, guildSettings);
+                  }
+                } catch (notificationError) {
+                  logger.error(
+                    `Error sending last minute notification for new match ${dbMatch.id}:`,
+                    notificationError
+                  );
+                }
+              }
             }
           } catch (matchError) {
             logger.error(`❌ Error processing match ${match.id}:`, matchError);
-            throw matchError; // Re-throw to trigger retry
+            throw matchError;
           }
         },
         3,
@@ -200,10 +240,135 @@ async function checkAndSaveMatches(prisma: PrismaClient) {
       );
     }
 
-    await checkLiveMatchesAndUpdateScores(prisma, pandaScoreService);
+    await updateExistingMatchesStatus(
+      prisma,
+      pandaScoreService,
+      liveMatches,
+      pastMatches
+    );
   } catch (error) {
     logger.error("❌ Error checking matches:", error);
     throw error;
+  }
+}
+
+async function updateExistingMatchesStatus(
+  prisma: PrismaClient,
+  pandaScoreService: PandaScoreService,
+  liveMatches: any[],
+  pastMatches: any[]
+) {
+  try {
+    const activeMatches = await prisma.match.findMany({
+      where: {
+        status: {
+          in: ["not_started", "live", "finished"],
+        },
+      },
+    });
+
+    if (activeMatches.length === 0) {
+      logger.info("📭 No active matches found in database");
+      return;
+    }
+
+    logger.info(
+      `📊 Found ${activeMatches.length} active matches in database to update`
+    );
+
+    const liveMatchIds = new Set(liveMatches.map((m) => m.id.toString()));
+    const pastMatchIds = new Set(pastMatches.map((m) => m.id.toString()));
+
+    for (const dbMatch of activeMatches) {
+      try {
+        let status = dbMatch.status;
+        let score = dbMatch.score;
+        let shouldSendScoreNotification = false;
+
+        if (liveMatchIds.has(dbMatch.id)) {
+          status = "live";
+
+          if (dbMatch.status === "not_started") {
+            logger.info(
+              `🚨 Last minute announcement for match ${dbMatch.id}: ${dbMatch.kcTeam} vs ${dbMatch.opponent}`
+            );
+
+            try {
+              const guildSettings = await getGuildSettings();
+              if (guildSettings.length > 0) {
+                await sendLastMinuteNotification(dbMatch, guildSettings);
+              }
+            } catch (notificationError) {
+              logger.error(
+                `Error sending last minute notification for match ${dbMatch.id}:`,
+                notificationError
+              );
+            }
+          }
+        } else if (pastMatchIds.has(dbMatch.id)) {
+          const pastMatch = pastMatches.find(
+            (m) => m.id.toString() === dbMatch.id
+          );
+          if (pastMatch) {
+            if (dbMatch.status === "live") {
+              status = "finished";
+              shouldSendScoreNotification = true;
+            } else {
+              status = "announced";
+            }
+
+            const matchScore = pandaScoreService.getMatchScore(pastMatch);
+            if (matchScore) {
+              score = matchScore;
+              logger.info(
+                `🏆 Match ${dbMatch.id} finished with score: ${matchScore}`
+              );
+            }
+          }
+        }
+
+        if (status !== dbMatch.status || score !== dbMatch.score) {
+          await prisma.match.update({
+            where: { id: dbMatch.id },
+            data: {
+              status: status,
+              score: score,
+            },
+          });
+
+          logger.info(
+            `✅ Updated match ${dbMatch.id}: status=${status}, score=${
+              score || "N/A"
+            }`
+          );
+
+          if (shouldSendScoreNotification && score) {
+            logger.info(
+              `📢 Sending score notification for finished match ${dbMatch.id}`
+            );
+
+            try {
+              const guildSettings = await getGuildSettings();
+              if (guildSettings.length > 0) {
+                await sendScoreNotification(
+                  { ...dbMatch, score },
+                  guildSettings
+                );
+              }
+            } catch (scoreNotificationError) {
+              logger.error(
+                `Error sending score notification for match ${dbMatch.id}:`,
+                scoreNotificationError
+              );
+            }
+          }
+        }
+      } catch (matchError) {
+        logger.error(`❌ Error updating match ${dbMatch.id}:`, matchError);
+      }
+    }
+  } catch (error) {
+    logger.error("❌ Error updating existing matches status:", error);
   }
 }
 
@@ -260,8 +425,8 @@ async function sendLastMinuteNotification(match: any, guildSettings: any[]) {
         const roleMentions = formatRoleMentions(pingRoles);
         const message =
           pingRoles.length > 0
-            ? `${roleMentions}\n🚨 **MATCH EN COURS !** 🚨`
-            : `🚨 **MATCH EN COURS !** 🚨`;
+            ? `${roleMentions}\n🚨 **Le match commence !** 🚨`
+            : `🚨 **Le match commence !** 🚨`;
 
         await Promise.race([
           channel.send({
@@ -293,102 +458,72 @@ async function sendLastMinuteNotification(match: any, guildSettings: any[]) {
   }
 }
 
-async function checkLiveMatchesAndUpdateScores(
-  prisma: PrismaClient,
-  pandaScoreService: PandaScoreService
+async function sendScoreNotification(
+  match: any,
+  guildSettings: GuildSettings[]
 ) {
   try {
-    const activeMatches = await prisma.match.findMany({
-      where: {
-        status: {
-          in: ["scheduled", "pre-announced", "live"],
-        },
-        beginAt: {
-          lte: new Date(),
-        },
-      },
+    const discordClient = await getDiscordClient();
+
+    const embed = await createScoreEmbed({
+      kcTeam: match.kcTeam,
+      kcId: match.kcId,
+      opponent: match.opponent,
+      opponentImage: match.opponentImage || undefined,
+      tournamentName: match.tournamentName,
+      leagueName: match.leagueName,
+      leagueImage: match.leagueImage || undefined,
+      serieName: match.serieName,
+      numberOfGames: match.numberOfGames,
+      beginAt: match.beginAt,
+      score: match.score,
     });
 
-    if (activeMatches.length === 0) {
-      logger.info("📭 No active matches found");
+    const guildSettingsWithScoreNotifications = guildSettings.filter(
+      (setting) => isScoreNotificationsEnabled(setting)
+    );
+
+    if (guildSettingsWithScoreNotifications.length === 0) {
+      logger.info("No guilds have score notifications enabled");
       return;
     }
 
-    logger.info(`📊 Found ${activeMatches.length} active matches to check`);
-
-    for (const dbMatch of activeMatches) {
-      await withRetry(
-        async () => {
-          try {
-            const currentMatch = await pandaScoreService.getMatchById(
-              parseInt(dbMatch.id)
+    const channelPromises = guildSettingsWithScoreNotifications.map(
+      async (setting) => {
+        try {
+          if (!isTeamAllowed(match.kcId, setting)) {
+            logger.debug(
+              `Skipping score notification for match ${match.id} for guild ${setting.guildId} - team ${match.kcId} not in filter`
             );
-
-            if (!currentMatch) {
-              return;
-            }
-
-            let status = dbMatch.status;
-            let score = dbMatch.score;
-
-            if (currentMatch.status === "running") {
-              status = "live";
-
-              if (dbMatch.status === "scheduled") {
-                logger.info(
-                  `🚨 Last minute announcement for match ${dbMatch.id}: ${dbMatch.kcTeam} vs ${dbMatch.opponent}`
-                );
-
-                try {
-                  const guildSettings = await getGuildSettings();
-                  if (guildSettings.length > 0) {
-                    await sendLastMinuteNotification(dbMatch, guildSettings);
-                  }
-                } catch (notificationError) {
-                  logger.error(
-                    `Error sending last minute notification for match ${dbMatch.id}:`,
-                    notificationError
-                  );
-                }
-              }
-            } else if (currentMatch.status === "finished") {
-              status = "finished";
-              const matchScore = pandaScoreService.getMatchScore(currentMatch);
-              if (matchScore) {
-                score = matchScore;
-                logger.info(
-                  `🏆 Match ${dbMatch.id} finished with score: ${matchScore}`
-                );
-              }
-            }
-
-            if (status !== dbMatch.status || score !== dbMatch.score) {
-              await prisma.match.update({
-                where: { id: dbMatch.id },
-                data: {
-                  status: status,
-                  score: score,
-                },
-              });
-
-              logger.info(
-                `✅ Updated match ${dbMatch.id}: status=${status}, score=${
-                  score || "N/A"
-                }`
-              );
-            }
-          } catch (matchError) {
-            logger.error(`❌ Error checking match ${dbMatch.id}:`, matchError);
-            // Don't throw here to avoid stopping the entire process
+            return;
           }
-        },
-        2,
-        1000
-      );
-    }
+
+          await sendMatchNotification(
+            discordClient,
+            setting,
+            match,
+            embed,
+            "score"
+          );
+
+          logger.info(
+            `Sent score notification for match ${match.id} to guild ${setting.guildId}`
+          );
+        } catch (error) {
+          logger.error(
+            `Error sending score notification to guild ${setting.guildId}:`,
+            error
+          );
+        }
+      }
+    );
+
+    await Promise.allSettled(channelPromises);
   } catch (error) {
-    logger.error("❌ Error checking live matches:", error);
-    // Don't throw here to avoid stopping the main match fetching process
+    logger.error(
+      `Error sending score notification for match ${match.id}:`,
+      error
+    );
   }
 }
 
