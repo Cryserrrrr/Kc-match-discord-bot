@@ -147,21 +147,6 @@ async function fillMissingGuildData() {
       { maxRetries: 3, initialDelay: 1000 }
     );
 
-    logger.info("Verification results:");
-    logger.info(
-      `- Guilds with null name: ${(remainingNullNames as any)[0]?.count}`
-    );
-    logger.info(
-      `- Guilds with null updatedAt: ${
-        (remainingNullUpdatedAt as any)[0]?.count
-      }`
-    );
-    logger.info(
-      `- Guilds with null memberCount: ${
-        (remainingNullMemberCount as any)[0]?.count
-      }`
-    );
-
     const totalRemaining =
       (remainingNullNames as any)[0]?.count +
       (remainingNullUpdatedAt as any)[0]?.count +
@@ -184,23 +169,8 @@ async function cleanupOldStats() {
   try {
     logger.info("Starting cleanup of old statistics...");
 
-    const ninetyDaysAgo = new Date();
-    ninetyDaysAgo.setDate(ninetyDaysAgo.getDate() - 90);
-
     const thirtyDaysAgo = new Date();
     thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
-
-    const deletedCommandStats = await withRetry(
-      () =>
-        prisma.commandStat.deleteMany({
-          where: {
-            executedAt: {
-              lt: ninetyDaysAgo,
-            },
-          },
-        }),
-      { maxRetries: 3, initialDelay: 1000 }
-    );
 
     const deletedPerformanceMetrics = await withRetry(
       () =>
@@ -215,7 +185,7 @@ async function cleanupOldStats() {
     );
 
     logger.info(
-      `Cleaned up ${deletedCommandStats.count} old command stats and ${deletedPerformanceMetrics.count} old performance metrics`
+      `Cleaned up ${deletedPerformanceMetrics.count} old performance metrics`
     );
   } catch (error) {
     logger.error("Error in cleanupOldStats:", error);

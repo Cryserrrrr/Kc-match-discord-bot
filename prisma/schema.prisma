@@ -112,15 +112,7 @@ model PerformanceMetric {
   @@map("performance_metrics")
 }
 
-model TeamPopularity {
-  id          String   @id @default(cuid())
-  teamId      String   // Team ID (KC, KCB, etc.)
-  teamName    String   // Team name
-  usageCount  Int      @default(0) // Number of uses
-  lastUsed    DateTime @default(now())
 
-  @@map("team_popularity")
-}
 
 model ChangeLog {
   id          String   @id @default(cuid())

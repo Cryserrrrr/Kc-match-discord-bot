@@ -1,6 +1,5 @@
 import { prisma } from "../index";
 import { logger } from "./logger";
-import { getTeamDisplayName } from "./teamMapper";
 
 export interface CommandExecutionData {
   guildId: string;
@@ -52,34 +51,8 @@ export class StatsManager {
           errorMessage: data.errorMessage,
         },
       });
-
-      if (data.teamArg && data.teamArg !== "all") {
-        await this.updateTeamPopularity(data.teamArg);
-      }
     } catch (error) {
       logger.error("Error recording command execution:", error);
-    }
-  }
-
-  static async updateTeamPopularity(teamId: string): Promise<void> {
-    try {
-      const teamName = getTeamDisplayName(teamId);
-
-      await prisma.teamPopularity.upsert({
-        where: { id: teamId },
-        update: {
-          usageCount: { increment: 1 },
-          lastUsed: new Date(),
-        },
-        create: {
-          id: teamId,
-          teamId,
-          teamName,
-          usageCount: 1,
-        },
-      });
-    } catch (error) {
-      logger.error("Error updating team popularity:", error);
     }
   }
 
@@ -216,22 +189,6 @@ export class StatsManager {
       }));
     } catch (error) {
       logger.error("Error getting global command stats:", error);
-      return [];
-    }
-  }
-
-  static async getMostPopularTeams(limit: number = 10): Promise<any> {
-    try {
-      const teams = await prisma.teamPopularity.findMany({
-        orderBy: {
-          usageCount: "desc",
-        },
-        take: limit,
-      });
-
-      return teams;
-    } catch (error) {
-      logger.error("Error getting most popular teams:", error);
       return [];
     }
   }
