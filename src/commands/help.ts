@@ -12,7 +12,7 @@ export const data = new SlashCommandBuilder()
 export async function execute(interaction: CommandInteraction) {
   try {
     const embed = new EmbedBuilder()
-      .setTitle("🤖 Bot Karmine Corp - Aide")
+      .setTitle("Bot Karmine Corp - Aide")
       .setDescription(
         "Ce bot automatise les annonces de matchs Karmine Corp sur Discord."
       )
@@ -33,23 +33,23 @@ export async function execute(interaction: CommandInteraction) {
 ** /ticket** - Créer un ticket de support
 
 ** /mytickets** - Liste vos tickets de support
+
+** /invitation** - Lien d'invitation du bot
           `,
           inline: false,
         },
         {
           name: "🔔 Messages automatiques",
           value: `
-- **Notifications quand un match est lancé**
-- **Notifications de score**
-- **Mises à jour du bot**
+- Notifications quand un match est lancé
+- Notifications de score
+- Mises à jour du bot
           `,
           inline: false,
         }
       )
-      .setFooter({
-        text: "Bot Karmine Corp - Développé avec ❤️ par Cryser",
-      })
-      .setTimestamp();
+      .setTimestamp()
+      .setFooter({ text: "Karmine Corp Match Bot" });
 
     if (interaction.deferred) {
       await interaction.editReply({ embeds: [embed] });
