@@ -10,6 +10,7 @@ import {
 import { StatsManager } from "../utils/statsManager";
 import { logger } from "../utils/logger";
 import { handleInteractionError } from "../utils/retryUtils";
+import { client } from "../index";
 
 export const data = new SlashCommandBuilder()
   .setName("ticket")
@@ -115,6 +116,70 @@ export async function handleTicketModalSubmit(interaction: any) {
       ticketType,
       description
     );
+
+    // Send DM to admin user about new ticket
+    const adminUserId = process.env.DISCORD_USER_ID;
+    if (adminUserId) {
+      try {
+        if (!client.isReady()) {
+          await new Promise<void>((resolve, reject) => {
+            const timeout = setTimeout(() => {
+              reject(new Error("Client ready timeout"));
+            }, 5000);
+
+            client.once("ready", () => {
+              clearTimeout(timeout);
+              resolve();
+            });
+          });
+        }
+
+        const adminUser = await client.users.fetch(adminUserId);
+        const adminEmbed = new EmbedBuilder()
+          .setColor(ticketType === "BUG" ? "#ff6b6b" : "#4ecdc4")
+          .setTitle(`🎫 Nouveau ticket créé`)
+          .setDescription(`Un nouveau ticket vient d'être créé`)
+          .addFields(
+            {
+              name: "Type",
+              value: ticketType === "BUG" ? "🐛 Bug" : "💡 Amélioration",
+              inline: true,
+            },
+            {
+              name: "ID du ticket",
+              value: `#${ticket.id.slice(-8)}`,
+              inline: true,
+            },
+            {
+              name: "Utilisateur",
+              value: `${username} (${userId})`,
+              inline: true,
+            },
+            {
+              name: "Description",
+              value:
+                description.length > 1024
+                  ? description.substring(0, 1021) + "..."
+                  : description,
+            },
+            {
+              name: "Lien",
+              value:
+                "[Voir le ticket sur Discord.cryser.fr](https://discord.cryser.fr/)",
+            }
+          )
+          .setTimestamp()
+          .setFooter({ text: `Ticket créé par ${username}` });
+
+        await adminUser.send({ embeds: [adminEmbed] });
+        logger.info(`Sent ticket notification to admin user ${adminUserId}`);
+      } catch (adminDmError) {
+        logger.error(
+          `Could not send DM to admin user ${adminUserId}:`,
+          adminDmError
+        );
+      }
+    }
 
     const embed = new EmbedBuilder()
       .setColor(ticketType === "BUG" ? "#ff6b6b" : "#4ecdc4")

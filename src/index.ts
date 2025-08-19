@@ -25,7 +25,7 @@ config();
 
 export const prisma = new PrismaClient();
 
-const client = new Client({
+export const client = new Client({
   intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages],
 }) as Client & { commands: Collection<string, any> };
 
