@@ -77,6 +77,7 @@ function createMainEmbed(guildSettings: any): EmbedBuilder {
     embed.addFields(
       { name: "📺 Canal d'annonce", value: channelMention, inline: true },
       { name: "👥 Rôles à mentionner", value: pingRolesStatus, inline: true },
+      { name: "🏆 Filtre d'équipes", value: teamsStatus, inline: true },
       {
         name: "🔔 Notifications avant-match",
         value: prematchEnabled,
@@ -87,8 +88,7 @@ function createMainEmbed(guildSettings: any): EmbedBuilder {
         name: "📢 Notifications de mise à jour",
         value: updateEnabled,
         inline: true,
-      },
-      { name: "🏆 Filtre d'équipes", value: teamsStatus, inline: true }
+      }
     );
   } else {
     embed.addFields({
@@ -108,34 +108,34 @@ function createMainMenu(): StringSelectMenuBuilder {
     .setPlaceholder("Sélectionnez une option de configuration")
     .addOptions(
       new StringSelectMenuOptionBuilder()
-        .setLabel("📺 Canal d'annonce")
+        .setLabel("Canal d'annonce")
         .setDescription("Définir le salon pour les annonces")
         .setValue("channel")
         .setEmoji("📺"),
       new StringSelectMenuOptionBuilder()
-        .setLabel("👥 Rôles à mentionner")
+        .setLabel("Rôles à mentionner")
         .setDescription("Sélectionner les rôles à mentionner")
         .setValue("roles")
         .setEmoji("👥"),
       new StringSelectMenuOptionBuilder()
-        .setLabel("🏆 Filtre d'équipes")
+        .setLabel("Filtre d'équipes")
         .setDescription("Choisir quelles équipes annoncer")
         .setValue("teams")
         .setEmoji("🏆"),
       new StringSelectMenuOptionBuilder()
-        .setLabel("🔔 Notifications avant-match")
+        .setLabel("Notifications avant-match")
         .setDescription(
           "Activer/désactiver les notifications au lancement du match"
         )
         .setValue("prematch")
         .setEmoji("🔔"),
       new StringSelectMenuOptionBuilder()
-        .setLabel("🏆 Notifications de score")
+        .setLabel("Notifications de score")
         .setDescription("Activer/désactiver les notifications de fin de match")
         .setValue("score")
         .setEmoji("🏆"),
       new StringSelectMenuOptionBuilder()
-        .setLabel("📢 Notifications de mise à jour")
+        .setLabel("Notifications de mise à jour")
         .setDescription(
           "Activer/désactiver les notifications de mise à jour du bot"
         )
@@ -238,10 +238,6 @@ export async function execute(interaction: CommandInteraction) {
     });
 
     collector.on("end", async () => {
-      logger.info(
-        "Config menu collector expired for user:",
-        interaction.user.id
-      );
       activeConfigSessions.delete(userId);
 
       try {

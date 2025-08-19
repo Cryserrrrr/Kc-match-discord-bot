@@ -562,12 +562,6 @@ export async function handleTeamsConfirmation(
     embeds: [],
     components: [],
   });
-
-  logger.info(
-    `Guild ${guildId} updated team filter: ${
-      selectedTeams.join(", ") || "all teams"
-    }`
-  );
 }
 
 export async function handleTeamsClear(interaction: any, guildId: string) {
