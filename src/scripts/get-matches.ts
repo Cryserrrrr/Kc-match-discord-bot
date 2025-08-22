@@ -229,6 +229,29 @@ async function checkAndSaveMatches(prisma: PrismaClient) {
                   );
                 }
               }
+            } else {
+              if (
+                dbMatch.status === "not_started" &&
+                match.rescheduled === true
+              ) {
+                const newScheduledAt = new Date(match.scheduled_at);
+                const currentBeginAt = dbMatch.beginAt;
+
+                if (newScheduledAt.getTime() !== currentBeginAt.getTime()) {
+                  await prisma.match.update({
+                    where: { id: matchId },
+                    data: {
+                      beginAt: newScheduledAt,
+                    },
+                  });
+
+                  logger.info(
+                    `🕐 Match ${dbMatch.id} rescheduled: ${dbMatch.kcTeam} vs ${
+                      dbMatch.opponent
+                    } - New time: ${newScheduledAt.toISOString()}`
+                  );
+                }
+              }
             }
           } catch (matchError) {
             logger.error(`❌ Error processing match ${match.id}:`, matchError);
