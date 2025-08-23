@@ -4,25 +4,12 @@ import { PrismaClient } from "@prisma/client";
 import { PandaScoreService } from "../services/pandascore";
 import { config } from "dotenv";
 import { logger } from "../utils/logger";
+import { Client, GatewayIntentBits } from "discord.js";
 import {
-  Client,
-  GatewayIntentBits,
-  TextChannel,
-  ChannelType,
-} from "discord.js";
-import {
-  createMatchEmbed,
-  createScoreEmbed,
-  createRescheduleEmbed,
-} from "../utils/embedBuilder";
-import { formatRoleMentions } from "../utils/roleMentions";
-import {
-  GuildSettings,
-  isTeamAllowed,
-  isScoreNotificationsEnabled,
-  getPingRoles,
-} from "../utils/guildFilters";
-import { sendMatchNotification } from "../utils/notificationUtils";
+  sendLastMinuteNotification,
+  sendScoreNotification,
+  sendRescheduleNotification,
+} from "../utils/notificationUtils";
 
 config();
 
@@ -248,7 +235,12 @@ async function checkAndSaveMatches(prisma: PrismaClient) {
                 try {
                   const guildSettings = await getGuildSettings();
                   if (guildSettings.length > 0) {
-                    await sendLastMinuteNotification(dbMatch, guildSettings);
+                    const discordClient = await getDiscordClient();
+                    await sendLastMinuteNotification(
+                      discordClient,
+                      dbMatch,
+                      guildSettings
+                    );
                   }
                 } catch (notificationError) {
                   logger.error(
@@ -304,14 +296,12 @@ async function checkAndSaveMatches(prisma: PrismaClient) {
                     !isDateToday(newScheduledAt);
 
                   if (isOriginalDateToday && isRescheduledToAnotherDay) {
-                    logger.info(
-                      `📢 Sending reschedule notification for match ${dbMatch.id} originally scheduled for today`
-                    );
-
                     try {
                       const guildSettings = await getGuildSettings();
                       if (guildSettings.length > 0) {
+                        const discordClient = await getDiscordClient();
                         await sendRescheduleNotification(
+                          discordClient,
                           { ...dbMatch, beginAt: newScheduledAt },
                           currentBeginAt,
                           guildSettings
@@ -393,7 +383,12 @@ async function updateExistingMatchesStatus(
             try {
               const guildSettings = await getGuildSettings();
               if (guildSettings.length > 0) {
-                await sendLastMinuteNotification(dbMatch, guildSettings);
+                const discordClient = await getDiscordClient();
+                await sendLastMinuteNotification(
+                  discordClient,
+                  dbMatch,
+                  guildSettings
+                );
               }
             } catch (notificationError) {
               logger.error(
@@ -440,14 +435,12 @@ async function updateExistingMatchesStatus(
           );
 
           if (shouldSendScoreNotification && score) {
-            logger.info(
-              `📢 Sending score notification for finished match ${dbMatch.id}`
-            );
-
             try {
               const guildSettings = await getGuildSettings();
               if (guildSettings.length > 0) {
+                const discordClient = await getDiscordClient();
                 await sendScoreNotification(
+                  discordClient,
                   { ...dbMatch, score },
                   guildSettings
                 );
@@ -469,253 +462,7 @@ async function updateExistingMatchesStatus(
   }
 }
 
-async function sendLastMinuteNotification(match: any, guildSettings: any[]) {
-  try {
-    const discordClient = await getDiscordClient();
-
-    const embed = await createMatchEmbed({
-      kcTeam: match.kcTeam,
-      kcId: match.kcId,
-      opponent: match.opponent,
-      opponentImage: match.opponentImage || undefined,
-      tournamentName: match.tournamentName,
-      leagueName: match.leagueName,
-      leagueImage: match.leagueImage || undefined,
-      serieName: match.serieName,
-      numberOfGames: match.numberOfGames,
-      beginAt: match.beginAt,
-    });
-
-    const channelPromises = guildSettings.map(async (setting) => {
-      try {
-        if (!setting.enablePreMatchNotifications) {
-          return;
-        }
-
-        if (setting.filteredTeams && setting.filteredTeams.length > 0) {
-          if (!setting.filteredTeams.includes(match.kcId)) {
-            return;
-          }
-        }
-
-        const guild = discordClient.guilds.cache.get(setting.guildId);
-        if (!guild) {
-          logger.warn(`Guild ${setting.guildId} not found`);
-          return;
-        }
-
-        try {
-          await guild.fetch();
-        } catch (error) {
-          logger.warn(`Failed to fetch guild ${setting.guildId}:`, error);
-        }
-
-        const channel = guild.channels.cache.get(
-          setting.channelId
-        ) as TextChannel;
-        if (!channel) {
-          return;
-        }
-
-        // Create ping message with selected roles
-        const pingRoles = (setting as any).pingRoles || [];
-        const roleMentions = formatRoleMentions(pingRoles);
-        const message =
-          pingRoles.length > 0
-            ? `${roleMentions}\n🚨 **Le match commence !** 🚨`
-            : `🚨 **Le match commence !** 🚨`;
-
-        await Promise.race([
-          channel.send({
-            content: message,
-            embeds: [embed],
-          }),
-          new Promise((_, reject) =>
-            setTimeout(() => reject(new Error("Send timeout")), 10000)
-          ),
-        ]);
-
-        logger.info(
-          `Sent last minute notification for match ${match.id} to guild ${setting.guildId}`
-        );
-      } catch (error) {
-        logger.error(
-          `Error sending last minute notification to guild ${setting.guildId}:`,
-          error
-        );
-      }
-    });
-
-    await Promise.allSettled(channelPromises);
-  } catch (error) {
-    logger.error(
-      `Error sending last minute notification for match ${match.id}:`,
-      error
-    );
-  }
-}
-
-async function sendScoreNotification(
-  match: any,
-  guildSettings: GuildSettings[]
-) {
-  try {
-    const discordClient = await getDiscordClient();
-
-    const embed = await createScoreEmbed({
-      kcTeam: match.kcTeam,
-      kcId: match.kcId,
-      opponent: match.opponent,
-      opponentImage: match.opponentImage || undefined,
-      tournamentName: match.tournamentName,
-      leagueName: match.leagueName,
-      leagueImage: match.leagueImage || undefined,
-      serieName: match.serieName,
-      numberOfGames: match.numberOfGames,
-      beginAt: match.beginAt,
-      score: match.score,
-    });
-
-    const guildSettingsWithScoreNotifications = guildSettings.filter(
-      (setting) => isScoreNotificationsEnabled(setting)
-    );
-
-    if (guildSettingsWithScoreNotifications.length === 0) {
-      logger.info("No guilds have score notifications enabled");
-      return;
-    }
-
-    const channelPromises = guildSettingsWithScoreNotifications.map(
-      async (setting) => {
-        try {
-          if (!isTeamAllowed(match.kcId, setting)) {
-            logger.debug(
-              `Skipping score notification for match ${match.id} for guild ${setting.guildId} - team ${match.kcId} not in filter`
-            );
-            return;
-          }
-
-          await sendMatchNotification(
-            discordClient,
-            setting,
-            match,
-            embed,
-            "score"
-          );
-
-          logger.info(
-            `Sent score notification for match ${match.id} to guild ${setting.guildId}`
-          );
-        } catch (error) {
-          logger.error(
-            `Error sending score notification to guild ${setting.guildId}:`,
-            error
-          );
-        }
-      }
-    );
-
-    await Promise.allSettled(channelPromises);
-  } catch (error) {
-    logger.error(
-      `Error sending score notification for match ${match.id}:`,
-      error
-    );
-  }
-}
-
-async function sendRescheduleNotification(
-  match: any,
-  originalTime: Date,
-  guildSettings: any[]
-) {
-  try {
-    const discordClient = await getDiscordClient();
-
-    const embed = await createRescheduleEmbed({
-      kcTeam: match.kcTeam,
-      kcId: match.kcId,
-      opponent: match.opponent,
-      opponentImage: match.opponentImage || undefined,
-      tournamentName: match.tournamentName,
-      leagueName: match.leagueName,
-      leagueImage: match.leagueImage || undefined,
-      serieName: match.serieName,
-      numberOfGames: match.numberOfGames,
-      beginAt: match.beginAt,
-      originalTime: originalTime,
-    });
-
-    const channelPromises = guildSettings.map(async (setting) => {
-      try {
-        if (!setting.enablePreMatchNotifications) {
-          return;
-        }
-
-        if (setting.filteredTeams && setting.filteredTeams.length > 0) {
-          if (!setting.filteredTeams.includes(match.kcId)) {
-            return;
-          }
-        }
-
-        const guild = discordClient.guilds.cache.get(setting.guildId);
-        if (!guild) {
-          logger.warn(`Guild ${setting.guildId} not found`);
-          return;
-        }
-
-        try {
-          await guild.fetch();
-        } catch (error) {
-          logger.warn(`Failed to fetch guild ${setting.guildId}:`, error);
-        }
-
-        const channel = guild.channels.cache.get(
-          setting.channelId
-        ) as TextChannel;
-        if (!channel) {
-          return;
-        }
-
-        const pingRoles = (setting as any).pingRoles || [];
-        const roleMentions = formatRoleMentions(pingRoles);
-        const message =
-          pingRoles.length > 0
-            ? `${roleMentions}\n **Match reporté !**`
-            : ` **Match reporté !**`;
-
-        await Promise.race([
-          channel.send({
-            content: message,
-            embeds: [embed],
-          }),
-          new Promise((_, reject) =>
-            setTimeout(() => reject(new Error("Send timeout")), 10000)
-          ),
-        ]);
-
-        logger.info(
-          `Sent reschedule notification for match ${match.id} to guild ${setting.guildId}`
-        );
-      } catch (error) {
-        logger.error(
-          `Error sending reschedule notification to guild ${setting.guildId}:`,
-          error
-        );
-      }
-    });
-
-    await Promise.allSettled(channelPromises);
-  } catch (error) {
-    logger.error(
-      `Error sending reschedule notification for match ${match.id}:`,
-      error
-    );
-  }
-}
-
 process.on("SIGINT", cleanup);
 process.on("SIGTERM", cleanup);
 
-// Run the script
 main();

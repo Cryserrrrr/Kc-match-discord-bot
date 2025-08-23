@@ -1,8 +1,20 @@
 import { Client, TextChannel, ChannelType } from "discord.js";
 import { logger } from "./logger";
 import { formatRoleMentions } from "./roleMentions";
-import { GuildSettings, getPingRoles } from "./guildFilters";
+import {
+  GuildSettings,
+  getPingRoles,
+  isTeamAllowed,
+  isScoreNotificationsEnabled,
+} from "./guildFilters";
 import { withRetry } from "./retryUtils";
+import {
+  createMatchEmbed,
+  createScoreEmbed,
+  createRescheduleEmbed,
+} from "./embedBuilder";
+
+export const DISCORD_RATE_LIMIT_DELAY = 500;
 
 export interface NotificationOptions {
   content?: string;
@@ -25,47 +37,115 @@ export interface MatchData {
   score?: string;
 }
 
+async function getGuildAndChannel(
+  client: Client,
+  guildId: string,
+  channelId: string
+) {
+  const guild = client.guilds.cache.get(guildId);
+  if (!guild) {
+    logger.warn(`Guild ${guildId} not found`);
+    return null;
+  }
+
+  try {
+    await guild.fetch();
+  } catch (error) {
+    logger.warn(`Failed to fetch guild ${guildId}:`, error);
+    return null;
+  }
+
+  const channel = guild.channels.cache.get(channelId) as TextChannel;
+  if (!channel) {
+    logger.warn(`Channel not found in guild ${guildId}`);
+    return null;
+  }
+
+  return { guild, channel };
+}
+
+async function sendMessageWithTimeout(
+  channel: TextChannel,
+  content: string,
+  embeds?: any[],
+  timeoutMs: number = 10000
+) {
+  await Promise.race([
+    channel.send({ content, embeds }),
+    new Promise((_, reject) =>
+      setTimeout(() => reject(new Error("Send timeout")), timeoutMs)
+    ),
+  ]);
+}
+
+async function addDelayIfNotLast(index: number, total: number) {
+  if (index < total - 1) {
+    await new Promise((resolve) =>
+      setTimeout(resolve, DISCORD_RATE_LIMIT_DELAY)
+    );
+  }
+}
+
+function filterEligibleGuilds(
+  guildSettings: any[],
+  match: any,
+  notificationType: "prematch" | "score" | "reschedule"
+) {
+  return guildSettings.filter((setting) => {
+    if (
+      notificationType === "prematch" &&
+      !setting.enablePreMatchNotifications
+    ) {
+      return false;
+    }
+    if (notificationType === "score" && !isScoreNotificationsEnabled(setting)) {
+      return false;
+    }
+    if (
+      notificationType === "reschedule" &&
+      !setting.enablePreMatchNotifications
+    ) {
+      return false;
+    }
+
+    if (setting.filteredTeams && setting.filteredTeams.length > 0) {
+      if (!setting.filteredTeams.includes(match.kcId)) {
+        return false;
+      }
+    }
+
+    if (notificationType === "score" && !isTeamAllowed(match.kcId, setting)) {
+      return false;
+    }
+
+    return true;
+  });
+}
+
 export async function sendNotificationToGuild(
   client: Client,
   guildSettings: GuildSettings,
   options: NotificationOptions
 ): Promise<boolean> {
   try {
-    const guild = client.guilds.cache.get(guildSettings.guildId);
-    if (!guild) {
-      logger.warn(`Guild ${guildSettings.guildId} not found`);
-      return false;
-    }
-
-    try {
-      await guild.fetch();
-    } catch (error) {
-      logger.warn(`Failed to fetch guild ${guildSettings.guildId}:`, error);
-      return false;
-    }
-
-    const channel = guild.channels.cache.get(
+    const result = await getGuildAndChannel(
+      client,
+      guildSettings.guildId,
       guildSettings.channelId
-    ) as TextChannel;
+    );
+    if (!result) return false;
 
-    if (!channel) {
-      logger.warn(`Channel not found in guild ${guildSettings.guildId}`);
-      return false;
-    }
-
+    const { channel } = result;
     const timeoutMs = options.timeoutMs || 10000;
 
     await withRetry(
       async () => {
-        await Promise.race([
-          channel.send({
-            content: options.content,
-            embeds: options.embeds,
-          }),
-          new Promise((_, reject) =>
-            setTimeout(() => reject(new Error("Send timeout")), timeoutMs)
-          ),
-        ]);
+        await sendMessageWithTimeout(
+          channel,
+          options.content || "",
+          options.embeds,
+          timeoutMs
+        );
       },
       { maxRetries: 3, initialDelay: 1000 }
     );
@@ -100,7 +180,7 @@ export async function sendMatchNotification(
 
   switch (notificationType) {
     case "score":
-      message += "🏁 **Match terminé !** 🏁";
+      message += "🏁 **Match terminé !**";
       break;
     case "daily":
       message += "Match du jour !";
@@ -118,16 +198,27 @@ export async function sendNotificationsToMultipleGuilds(
   guildSettingsList: GuildSettings[],
   options: NotificationOptions
 ): Promise<{ success: number; failed: number }> {
-  const results = await Promise.allSettled(
-    guildSettingsList.map((settings) =>
-      sendNotificationToGuild(client, settings, options)
-    )
-  );
+  let success = 0;
+  let failed = 0;
 
-  const success = results.filter(
-    (result) => result.status === "fulfilled" && result.value === true
-  ).length;
-  const failed = results.length - success;
+  for (let i = 0; i < guildSettingsList.length; i++) {
+    const settings = guildSettingsList[i];
+    try {
+      const result = await sendNotificationToGuild(client, settings, options);
+      if (result) {
+        success++;
+      } else {
+        failed++;
+      }
+      await addDelayIfNotLast(i, guildSettingsList.length);
+    } catch (error) {
+      logger.error(
+        `Error sending notification to guild ${settings.guildId}:`,
+        error
+      );
+      failed++;
+    }
+  }
 
   return { success, failed };
 }
@@ -139,16 +230,403 @@ export async function sendMatchNotificationsToMultipleGuilds(
   embed: any,
   notificationType: "score" | "daily"
 ): Promise<{ success: number; failed: number }> {
-  const results = await Promise.allSettled(
-    guildSettingsList.map((settings) =>
-      sendMatchNotification(client, settings, match, embed, notificationType)
-    )
-  );
+  let success = 0;
+  let failed = 0;
 
-  const success = results.filter(
-    (result) => result.status === "fulfilled" && result.value === true
-  ).length;
-  const failed = results.length - success;
+  for (let i = 0; i < guildSettingsList.length; i++) {
+    const settings = guildSettingsList[i];
+    try {
+      const result = await sendMatchNotification(
+        client,
+        settings,
+        match,
+        embed,
+        notificationType
+      );
+      if (result) {
+        success++;
+      } else {
+        failed++;
+      }
+      await addDelayIfNotLast(i, guildSettingsList.length);
+    } catch (error) {
+      logger.error(
+        `Error sending match notification to guild ${settings.guildId}:`,
+        error
+      );
+      failed++;
+    }
+  }
 
   return { success, failed };
+}
+
+export async function sendLastMinuteNotification(
+  client: Client,
+  match: any,
+  guildSettings: any[]
+): Promise<void> {
+  try {
+    const embed = await createMatchEmbed({
+      kcTeam: match.kcTeam,
+      kcId: match.kcId,
+      opponent: match.opponent,
+      opponentImage: match.opponentImage || undefined,
+      tournamentName: match.tournamentName,
+      leagueName: match.leagueName,
+      leagueImage: match.leagueImage || undefined,
+      serieName: match.serieName,
+      numberOfGames: match.numberOfGames,
+      beginAt: match.beginAt,
+    });
+
+    const eligibleGuilds = filterEligibleGuilds(
+      guildSettings,
+      match,
+      "prematch"
+    );
+
+    if (eligibleGuilds.length === 0) {
+      logger.info("No eligible guilds for last minute notification");
+      return;
+    }
+
+    for (let i = 0; i < eligibleGuilds.length; i++) {
+      const setting = eligibleGuilds[i];
+      try {
+        const result = await getGuildAndChannel(
+          client,
+          setting.guildId,
+          setting.channelId
+        );
+        if (!result) continue;
+
+        const { channel } = result;
+        const pingRoles = (setting as any).pingRoles || [];
+        const roleMentions = formatRoleMentions(pingRoles);
+        const message =
+          pingRoles.length > 0
+            ? `${roleMentions}\n🚨 **Le match commence !** 🚨`
+            : `🚨 **Le match commence !** 🚨`;
+
+        await sendMessageWithTimeout(channel, message, [embed]);
+
+        logger.info(
+          `Sent last minute notification for match ${match.id} to guild ${setting.guildId}`
+        );
+
+        await addDelayIfNotLast(i, eligibleGuilds.length);
+      } catch (error) {
+        logger.error(
+          `Error sending last minute notification to guild ${setting.guildId}:`,
+          error
+        );
+      }
+    }
+  } catch (error) {
+    logger.error(
+      `Error sending last minute notification for match ${match.id}:`,
+      error
+    );
+  }
+}
+
+export async function sendScoreNotification(
+  client: Client,
+  match: any,
+  guildSettings: GuildSettings[]
+): Promise<void> {
+  try {
+    const embed = await createScoreEmbed({
+      kcTeam: match.kcTeam,
+      kcId: match.kcId,
+      opponent: match.opponent,
+      opponentImage: match.opponentImage || undefined,
+      tournamentName: match.tournamentName,
+      leagueName: match.leagueName,
+      leagueImage: match.leagueImage || undefined,
+      serieName: match.serieName,
+      numberOfGames: match.numberOfGames,
+      beginAt: match.beginAt,
+      score: match.score,
+    });
+
+    const eligibleGuilds = filterEligibleGuilds(guildSettings, match, "score");
+
+    if (eligibleGuilds.length === 0) {
+      logger.info("No eligible guilds for score notification");
+      return;
+    }
+
+    for (let i = 0; i < eligibleGuilds.length; i++) {
+      const setting = eligibleGuilds[i];
+      try {
+        await sendMatchNotification(client, setting, match, embed, "score");
+        await addDelayIfNotLast(i, eligibleGuilds.length);
+      } catch (error) {
+        logger.error(
+          `Error sending score notification to guild ${setting.guildId}:`,
+          error
+        );
+      }
+    }
+  } catch (error) {
+    logger.error(
+      `Error sending score notification for match ${match.id}:`,
+      error
+    );
+  }
+}
+
+export async function sendRescheduleNotification(
+  client: Client,
+  match: any,
+  originalTime: Date,
+  guildSettings: any[]
+): Promise<void> {
+  try {
+    const embed = await createRescheduleEmbed({
+      kcTeam: match.kcTeam,
+      kcId: match.kcId,
+      opponent: match.opponent,
+      opponentImage: match.opponentImage || undefined,
+      tournamentName: match.tournamentName,
+      leagueName: match.leagueName,
+      leagueImage: match.leagueImage || undefined,
+      serieName: match.serieName,
+      numberOfGames: match.numberOfGames,
+      beginAt: match.beginAt,
+      originalTime: originalTime,
+    });
+
+    const eligibleGuilds = filterEligibleGuilds(
+      guildSettings,
+      match,
+      "reschedule"
+    );
+
+    if (eligibleGuilds.length === 0) {
+      logger.info("No eligible guilds for reschedule notification");
+      return;
+    }
+
+    for (let i = 0; i < eligibleGuilds.length; i++) {
+      const setting = eligibleGuilds[i];
+      try {
+        const result = await getGuildAndChannel(
+          client,
+          setting.guildId,
+          setting.channelId
+        );
+        if (!result) continue;
+
+        const { channel } = result;
+        const pingRoles = (setting as any).pingRoles || [];
+        const roleMentions = formatRoleMentions(pingRoles);
+        const message =
+          pingRoles.length > 0
+            ? `${roleMentions}\n **Match reporté !**`
+            : ` **Match reporté !**`;
+
+        await sendMessageWithTimeout(channel, message, [embed]);
+
+        logger.info(
+          `Sent reschedule notification for match ${match.id} to guild ${setting.guildId}`
+        );
+
+        await addDelayIfNotLast(i, eligibleGuilds.length);
+      } catch (error) {
+        logger.error(
+          `Error sending reschedule notification to guild ${setting.guildId}:`,
+          error
+        );
+      }
+    }
+  } catch (error) {
+    logger.error(
+      `Error sending reschedule notification for match ${match.id}:`,
+      error
+    );
+  }
+}
+
+export async function sendDailyMatchAnnouncement(
+  client: Client,
+  guildSettings: any[],
+  matches: any[]
+): Promise<boolean> {
+  try {
+    if (guildSettings.length === 0) {
+      logger.info(
+        "⚠️  No guild settings found - no channels configured for announcements"
+      );
+      return false;
+    }
+
+    let hasSuccessfulAnnouncements = false;
+
+    for (let i = 0; i < guildSettings.length; i++) {
+      const settings = guildSettings[i];
+      try {
+        const result = await getGuildAndChannel(
+          client,
+          settings.guildId,
+          settings.channelId
+        );
+        if (!result) continue;
+
+        const { guild, channel } = result;
+        let filteredMatches = matches;
+
+        if (
+          (settings as any).filteredTeams &&
+          (settings as any).filteredTeams.length > 0
+        ) {
+          filteredMatches = matches.filter((match) =>
+            (settings as any).filteredTeams.includes(match.kcId)
+          );
+        }
+
+        if (filteredMatches.length === 0) {
+          logger.info(
+            `⏭️  No matches to announce for guild ${guild.name} (filtered)`
+          );
+          continue;
+        }
+
+        const pingRoles = (settings as any).pingRoles || [];
+        const roleMentions = formatRoleMentions(pingRoles);
+        const pingMessage =
+          pingRoles.length > 0
+            ? `${roleMentions} Match du jour !`
+            : "Match du jour !";
+
+        await channel.send(pingMessage);
+
+        for (const match of filteredMatches) {
+          try {
+            const embed = await createMatchEmbed({
+              kcTeam: match.kcTeam,
+              kcId: match.kcId,
+              opponent: match.opponent,
+              opponentImage: match.opponentImage,
+              tournamentName: match.tournamentName,
+              leagueName: match.leagueName,
+              leagueImage: match.leagueImage,
+              serieName: match.serieName,
+              numberOfGames: match.numberOfGames,
+              beginAt: match.beginAt,
+            });
+
+            await channel.send({ embeds: [embed] });
+
+            if (filteredMatches.indexOf(match) < filteredMatches.length - 1) {
+              await new Promise((resolve) => setTimeout(resolve, 1000));
+            }
+          } catch (matchError) {
+            logger.error(`❌ Error sending match ${match.id}:`, matchError);
+          }
+        }
+
+        logger.info(
+          `✅ Successfully announced ${filteredMatches.length} matches in guild ${guild.name}`
+        );
+        hasSuccessfulAnnouncements = true;
+
+        await addDelayIfNotLast(i, guildSettings.length);
+      } catch (error) {
+        logger.error(
+          `❌ Failed to announce matches in guild ${settings.guildId}:`,
+          error
+        );
+      }
+    }
+
+    return hasSuccessfulAnnouncements;
+  } catch (error) {
+    logger.error("❌ Error announcing matches:", error);
+    throw error;
+  }
+}
+
+export async function sendNoMatchesAnnouncement(
+  client: Client,
+  guildSettings: any[]
+): Promise<void> {
+  try {
+    if (guildSettings.length === 0) {
+      logger.info(
+        "⚠️  No guild settings found - no channels configured for announcements"
+      );
+      return;
+    }
+
+    for (let i = 0; i < guildSettings.length; i++) {
+      const settings = guildSettings[i];
+      try {
+        const result = await getGuildAndChannel(
+          client,
+          settings.guildId,
+          settings.channelId
+        );
+        if (!result) continue;
+
+        const { guild, channel } = result;
+        await channel.send("🔔 Pas de match aujourd'hui");
+        logger.info(`✅ Sent "no matches" message in guild ${guild.name}`);
+
+        await addDelayIfNotLast(i, guildSettings.length);
+      } catch (error) {
+        logger.error(
+          `❌ Failed to send "no matches" message in guild ${settings.guildId}:`,
+          error
+        );
+      }
+    }
+  } catch (error) {
+    logger.error("❌ Error sending no matches message:", error);
+    throw error;
+  }
+}
+
+export async function sendChangelogNotification(
+  client: Client,
+  guildSettings: any[],
+  changelogText: string
+): Promise<{ sentCount: number; errorCount: number }> {
+  let sentCount = 0;
+  let errorCount = 0;
+
+  for (let i = 0; i < guildSettings.length; i++) {
+    const guild = guildSettings[i];
+    try {
+      const channel = await client.channels.fetch(guild.channelId);
+
+      if (!channel || !channel.isTextBased()) {
+        logger.warn(
+          `Invalid channel ${guild.channelId} for guild ${guild.guildId}`
+        );
+        continue;
+      }
+
+      if ("send" in channel) {
+        await channel.send(changelogText);
+      } else {
+        logger.warn(
+          `Channel ${guild.channelId} does not support sending messages`
+        );
+        continue;
+      }
+
+      sentCount++;
+      logger.info(`Sent changelog to guild ${guild.guildId} (${guild.name})`);
+
+      await addDelayIfNotLast(i, guildSettings.length);
+    } catch (error) {
+      errorCount++;
+      logger.error(`Error sending changelog to guild ${guild.guildId}:`, error);
+    }
+  }
+
+  return { sentCount, errorCount };
 }

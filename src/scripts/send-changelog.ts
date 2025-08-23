@@ -2,6 +2,7 @@ import { config } from "dotenv";
 import { ClientManager } from "../utils/clientManager";
 import { logger } from "../utils/logger";
 import { isUpdateNotificationsEnabled } from "../utils/guildFilters";
+import { sendChangelogNotification } from "../utils/notificationUtils";
 
 config();
 
@@ -45,40 +46,15 @@ async function sendChangelogs() {
         `Processing changelog: ${changelog.text.substring(0, 50)}...`
       );
 
-      for (const guild of guildsWithNotifications) {
-        try {
-          const channel = await client.channels.fetch(guild.channelId);
+      const { sentCount: changelogSentCount, errorCount: changelogErrorCount } =
+        await sendChangelogNotification(
+          client,
+          guildsWithNotifications,
+          changelog.text
+        );
 
-          if (!channel || !channel.isTextBased()) {
-            logger.warn(
-              `Invalid channel ${guild.channelId} for guild ${guild.guildId}`
-            );
-            continue;
-          }
-
-          if ("send" in channel) {
-            await channel.send(changelog.text);
-          } else {
-            logger.warn(
-              `Channel ${guild.channelId} does not support sending messages`
-            );
-            continue;
-          }
-
-          sentCount++;
-          logger.info(
-            `Sent changelog to guild ${guild.guildId} (${guild.name})`
-          );
-
-          await new Promise((resolve) => setTimeout(resolve, 100));
-        } catch (error) {
-          errorCount++;
-          logger.error(
-            `Error sending changelog to guild ${guild.guildId}:`,
-            error
-          );
-        }
-      }
+      sentCount += changelogSentCount;
+      errorCount += changelogErrorCount;
 
       await prisma.changeLog.update({
         where: { id: changelog.id },

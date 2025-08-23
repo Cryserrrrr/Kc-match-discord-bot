@@ -3,9 +3,11 @@
 import { PrismaClient } from "@prisma/client";
 import { Client, GatewayIntentBits, TextChannel } from "discord.js";
 import { config } from "dotenv";
-import { createMatchEmbed } from "../utils/embedBuilder";
 import { logger } from "../utils/logger";
-import { formatRoleMentions } from "../utils/roleMentions";
+import {
+  sendDailyMatchAnnouncement,
+  sendNoMatchesAnnouncement,
+} from "../utils/notificationUtils";
 
 config();
 
@@ -93,7 +95,8 @@ async function main() {
       logger.info("📭 No matches found for the next 24 hours in database");
       await withRetry(async () => {
         if (!client || !prisma) throw new Error("Clients not initialized");
-        await announceNoMatches(client, prisma);
+        const guildSettings = await prisma.guildSettings.findMany();
+        await sendNoMatchesAnnouncement(client, guildSettings);
       });
     } else {
       logger.info(
@@ -103,7 +106,8 @@ async function main() {
       // Announce all matches with retry
       const hasAnnouncements = await withRetry(async () => {
         if (!client || !prisma) throw new Error("Clients not initialized");
-        return await announceAllMatches(client, prisma, matches);
+        const guildSettings = await prisma.guildSettings.findMany();
+        return await sendDailyMatchAnnouncement(client, guildSettings, matches);
       });
 
       // Only send "no matches" message if no guild received any announcements
@@ -113,7 +117,8 @@ async function main() {
         );
         await withRetry(async () => {
           if (!client || !prisma) throw new Error("Clients not initialized");
-          await announceNoMatches(client, prisma);
+          const guildSettings = await prisma.guildSettings.findMany();
+          await sendNoMatchesAnnouncement(client, guildSettings);
         });
       }
     }
@@ -157,169 +162,6 @@ async function getMatchesNext24Hours(prisma: PrismaClient) {
     return matches;
   } catch (error) {
     logger.error("❌ Error fetching matches from database:", error);
-    throw error;
-  }
-}
-
-async function announceNoMatches(client: Client, prisma: PrismaClient) {
-  try {
-    const guildSettings = await prisma.guildSettings.findMany();
-
-    if (guildSettings.length === 0) {
-      logger.info(
-        "⚠️  No guild settings found - no channels configured for announcements"
-      );
-      return;
-    }
-
-    // Lancer toutes les annonces en parallèle
-    const announcementPromises = guildSettings.map(async (settings) => {
-      return withRetry(
-        async () => {
-          try {
-            const guild = await client.guilds.fetch(settings.guildId);
-            const channel = await guild.channels.fetch(settings.channelId);
-
-            if (channel instanceof TextChannel) {
-              await channel.send("🔔 Pas de match aujourd'hui");
-              logger.info(
-                `✅ Sent "no matches" message in guild ${guild.name}`
-              );
-            }
-          } catch (error) {
-            logger.error(
-              `❌ Failed to send "no matches" message in guild ${settings.guildId}:`,
-              error
-            );
-            throw error; // Re-throw to trigger retry
-          }
-        },
-        3,
-        1000
-      );
-    });
-
-    // Attendre que toutes les annonces soient terminées
-    await Promise.allSettled(announcementPromises);
-  } catch (error) {
-    logger.error("❌ Error sending no matches message:", error);
-    throw error;
-  }
-}
-
-async function announceAllMatches(
-  client: Client,
-  prisma: PrismaClient,
-  matches: any[]
-): Promise<boolean> {
-  try {
-    const guildSettings = await prisma.guildSettings.findMany();
-
-    if (guildSettings.length === 0) {
-      logger.info(
-        "⚠️  No guild settings found - no channels configured for announcements"
-      );
-      return false;
-    }
-
-    // Lancer toutes les annonces en parallèle
-    const announcementPromises = guildSettings.map(async (settings) => {
-      return withRetry(
-        async () => {
-          try {
-            const guild = await client.guilds.fetch(settings.guildId);
-            const channel = await guild.channels.fetch(settings.channelId);
-
-            if (channel instanceof TextChannel) {
-              let filteredMatches = matches;
-
-              if (
-                (settings as any).filteredTeams &&
-                (settings as any).filteredTeams.length > 0
-              ) {
-                filteredMatches = matches.filter((match) =>
-                  (settings as any).filteredTeams.includes(match.kcId)
-                );
-              }
-
-              if (filteredMatches.length === 0) {
-                logger.info(
-                  `⏭️  No matches to announce for guild ${guild.name} (filtered)`
-                );
-                return false;
-              }
-
-              // Create ping message with selected roles
-              const pingRoles = (settings as any).pingRoles || [];
-              const roleMentions = formatRoleMentions(pingRoles);
-              const pingMessage =
-                pingRoles.length > 0
-                  ? `${roleMentions} Match du jour !`
-                  : "Match du jour !";
-
-              await channel.send(pingMessage);
-
-              for (const match of filteredMatches) {
-                await withRetry(
-                  async () => {
-                    try {
-                      const embed = await createMatchEmbed({
-                        kcTeam: match.kcTeam,
-                        kcId: match.kcId,
-                        opponent: match.opponent,
-                        opponentImage: match.opponentImage,
-                        tournamentName: match.tournamentName,
-                        leagueName: match.leagueName,
-                        leagueImage: match.leagueImage,
-                        serieName: match.serieName,
-                        numberOfGames: match.numberOfGames,
-                        beginAt: match.beginAt,
-                      });
-
-                      await channel.send({ embeds: [embed] });
-
-                      await new Promise((resolve) => setTimeout(resolve, 1000));
-                    } catch (matchError) {
-                      logger.error(
-                        `❌ Error sending match ${match.id}:`,
-                        matchError
-                      );
-                      throw matchError; // Re-throw to trigger retry
-                    }
-                  },
-                  2,
-                  500
-                );
-              }
-
-              logger.info(
-                `✅ Successfully announced ${filteredMatches.length} matches in guild ${guild.name}`
-              );
-              return true;
-            }
-            return false;
-          } catch (error) {
-            logger.error(
-              `❌ Failed to announce matches in guild ${settings.guildId}:`,
-              error
-            );
-            throw error; // Re-throw to trigger retry
-          }
-        },
-        3,
-        1000
-      );
-    });
-
-    // Attendre que toutes les annonces soient terminées et vérifier si au moins une a réussi
-    const results = await Promise.allSettled(announcementPromises);
-    const hasAnnouncements = results.some(
-      (result) => result.status === "fulfilled" && result.value === true
-    );
-
-    return hasAnnouncements;
-  } catch (error) {
-    logger.error("❌ Error announcing matches:", error);
     throw error;
   }
 }
