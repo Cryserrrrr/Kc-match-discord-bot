@@ -36,6 +36,30 @@ let guildSettingsCache: any[] | null = null;
 let lastCacheUpdate = 0;
 const CACHE_DURATION = 5 * 60 * 1000;
 
+function isDateToday(date: Date): boolean {
+  const now = new Date();
+
+  let currentDayStart: Date;
+  let currentDayEnd: Date;
+
+  if (now.getHours() < 12) {
+    currentDayStart = new Date(now);
+    currentDayStart.setDate(currentDayStart.getDate() - 1);
+    currentDayStart.setHours(12, 0, 0, 0);
+
+    currentDayEnd = new Date(now);
+    currentDayEnd.setHours(12, 0, 0, 0);
+  } else {
+    currentDayStart = new Date(now);
+    currentDayStart.setHours(12, 0, 0, 0);
+
+    currentDayEnd = new Date(currentDayStart);
+    currentDayEnd.setDate(currentDayEnd.getDate() + 1);
+  }
+
+  return date >= currentDayStart && date < currentDayEnd;
+}
+
 async function getDiscordClient(): Promise<Client> {
   if (!client) {
     client = new Client({
@@ -255,32 +279,11 @@ async function checkAndSaveMatches(prisma: PrismaClient) {
                     } - New time: ${newScheduledAt.toISOString()}`
                   );
 
-                  const now = new Date();
-                  const originalDate = new Date(currentBeginAt);
+                  const isOriginalDateToday = isDateToday(currentBeginAt);
+                  const isRescheduledToAnotherDay =
+                    !isDateToday(newScheduledAt);
 
-                  let currentDayStart: Date;
-                  let currentDayEnd: Date;
-
-                  if (now.getHours() < 12) {
-                    currentDayStart = new Date(now);
-                    currentDayStart.setDate(currentDayStart.getDate() - 1);
-                    currentDayStart.setHours(12, 0, 0, 0);
-
-                    currentDayEnd = new Date(now);
-                    currentDayEnd.setHours(12, 0, 0, 0);
-                  } else {
-                    currentDayStart = new Date(now);
-                    currentDayStart.setHours(12, 0, 0, 0);
-
-                    currentDayEnd = new Date(currentDayStart);
-                    currentDayEnd.setDate(currentDayEnd.getDate() + 1);
-                  }
-
-                  const isOriginalDateToday =
-                    originalDate >= currentDayStart &&
-                    originalDate < currentDayEnd;
-
-                  if (isOriginalDateToday) {
+                  if (isOriginalDateToday && isRescheduledToAnotherDay) {
                     logger.info(
                       `📢 Sending reschedule notification for match ${dbMatch.id} originally scheduled for today`
                     );
