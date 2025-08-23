@@ -10,7 +10,11 @@ import {
   TextChannel,
   ChannelType,
 } from "discord.js";
-import { createMatchEmbed, createScoreEmbed } from "../utils/embedBuilder";
+import {
+  createMatchEmbed,
+  createScoreEmbed,
+  createRescheduleEmbed,
+} from "../utils/embedBuilder";
 import { formatRoleMentions } from "../utils/roleMentions";
 import {
   GuildSettings,
@@ -250,6 +254,53 @@ async function checkAndSaveMatches(prisma: PrismaClient) {
                       dbMatch.opponent
                     } - New time: ${newScheduledAt.toISOString()}`
                   );
+
+                  const now = new Date();
+                  const originalDate = new Date(currentBeginAt);
+
+                  let currentDayStart: Date;
+                  let currentDayEnd: Date;
+
+                  if (now.getHours() < 12) {
+                    currentDayStart = new Date(now);
+                    currentDayStart.setDate(currentDayStart.getDate() - 1);
+                    currentDayStart.setHours(12, 0, 0, 0);
+
+                    currentDayEnd = new Date(now);
+                    currentDayEnd.setHours(12, 0, 0, 0);
+                  } else {
+                    currentDayStart = new Date(now);
+                    currentDayStart.setHours(12, 0, 0, 0);
+
+                    currentDayEnd = new Date(currentDayStart);
+                    currentDayEnd.setDate(currentDayEnd.getDate() + 1);
+                  }
+
+                  const isOriginalDateToday =
+                    originalDate >= currentDayStart &&
+                    originalDate < currentDayEnd;
+
+                  if (isOriginalDateToday) {
+                    logger.info(
+                      `📢 Sending reschedule notification for match ${dbMatch.id} originally scheduled for today`
+                    );
+
+                    try {
+                      const guildSettings = await getGuildSettings();
+                      if (guildSettings.length > 0) {
+                        await sendRescheduleNotification(
+                          { ...dbMatch, beginAt: newScheduledAt },
+                          currentBeginAt,
+                          guildSettings
+                        );
+                      }
+                    } catch (rescheduleNotificationError) {
+                      logger.error(
+                        `Error sending reschedule notification for match ${dbMatch.id}:`,
+                        rescheduleNotificationError
+                      );
+                    }
+                  }
                 }
               }
             }
@@ -545,6 +596,96 @@ async function sendScoreNotification(
   } catch (error) {
     logger.error(
       `Error sending score notification for match ${match.id}:`,
+      error
+    );
+  }
+}
+
+async function sendRescheduleNotification(
+  match: any,
+  originalTime: Date,
+  guildSettings: any[]
+) {
+  try {
+    const discordClient = await getDiscordClient();
+
+    const embed = await createRescheduleEmbed({
+      kcTeam: match.kcTeam,
+      kcId: match.kcId,
+      opponent: match.opponent,
+      opponentImage: match.opponentImage || undefined,
+      tournamentName: match.tournamentName,
+      leagueName: match.leagueName,
+      leagueImage: match.leagueImage || undefined,
+      serieName: match.serieName,
+      numberOfGames: match.numberOfGames,
+      beginAt: match.beginAt,
+      originalTime: originalTime,
+    });
+
+    const channelPromises = guildSettings.map(async (setting) => {
+      try {
+        if (!setting.enablePreMatchNotifications) {
+          return;
+        }
+
+        if (setting.filteredTeams && setting.filteredTeams.length > 0) {
+          if (!setting.filteredTeams.includes(match.kcId)) {
+            return;
+          }
+        }
+
+        const guild = discordClient.guilds.cache.get(setting.guildId);
+        if (!guild) {
+          logger.warn(`Guild ${setting.guildId} not found`);
+          return;
+        }
+
+        try {
+          await guild.fetch();
+        } catch (error) {
+          logger.warn(`Failed to fetch guild ${setting.guildId}:`, error);
+        }
+
+        const channel = guild.channels.cache.get(
+          setting.channelId
+        ) as TextChannel;
+        if (!channel) {
+          return;
+        }
+
+        const pingRoles = (setting as any).pingRoles || [];
+        const roleMentions = formatRoleMentions(pingRoles);
+        const message =
+          pingRoles.length > 0
+            ? `${roleMentions}\n **Match reporté !**`
+            : ` **Match reporté !**`;
+
+        await Promise.race([
+          channel.send({
+            content: message,
+            embeds: [embed],
+          }),
+          new Promise((_, reject) =>
+            setTimeout(() => reject(new Error("Send timeout")), 10000)
+          ),
+        ]);
+
+        logger.info(
+          `Sent reschedule notification for match ${match.id} to guild ${setting.guildId}`
+        );
+      } catch (error) {
+        logger.error(
+          `Error sending reschedule notification to guild ${setting.guildId}:`,
+          error
+        );
+      }
+    });
+
+    await Promise.allSettled(channelPromises);
+  } catch (error) {
+    logger.error(
+      `Error sending reschedule notification for match ${match.id}:`,
       error
     );
   }

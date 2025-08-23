@@ -17,6 +17,10 @@ export interface ScoreMatchData extends MatchData {
   score: string;
 }
 
+export interface RescheduleMatchData extends MatchData {
+  originalTime: Date;
+}
+
 export async function createMatchEmbed(
   match: MatchData
 ): Promise<EmbedBuilder> {
@@ -62,6 +66,73 @@ export async function createMatchEmbed(
     .addFields([
       { name: "Date", value: dateString, inline: true },
       { name: "Heure", value: timeString, inline: true },
+      {
+        name: "Games",
+        value: `Bo${match.numberOfGames.toString()}`,
+        inline: true,
+      },
+    ])
+    .setTimestamp()
+    .setFooter({ text: "Karmine Corp Match Bot" })
+    .setThumbnail(match.leagueImage || kcLogoUrl);
+
+  return embed;
+}
+
+export async function createRescheduleEmbed(
+  match: RescheduleMatchData
+): Promise<EmbedBuilder> {
+  const matchTime = new Date(match.beginAt);
+  const originalTime = new Date(match.originalTime);
+
+  const today = new Date();
+  const tomorrow = new Date(today);
+  tomorrow.setDate(tomorrow.getDate() + 1);
+
+  let dateString: string;
+  const matchDate = matchTime.toDateString();
+  const todayDate = today.toDateString();
+  const tomorrowDate = tomorrow.toDateString();
+
+  if (matchDate === todayDate) {
+    dateString = "Aujourd'hui";
+  } else if (matchDate === tomorrowDate) {
+    dateString = "Demain";
+  } else {
+    dateString = matchTime.toLocaleString("fr-FR", {
+      weekday: "long",
+      month: "long",
+      day: "numeric",
+    });
+  }
+
+  const timeString = matchTime.toLocaleString("fr-FR", {
+    hour: "2-digit",
+    minute: "2-digit",
+    timeZone: "Europe/Paris",
+  });
+
+  const originalTimeString = originalTime.toLocaleString("fr-FR", {
+    hour: "2-digit",
+    minute: "2-digit",
+    timeZone: "Europe/Paris",
+  });
+
+  const embedColor = getEmbedColor(match.kcId);
+
+  const kcLogoUrl =
+    "https://cdn.pandascore.co/images/team/image/136165/karmine_corplogo_square.png";
+
+  const embed = new EmbedBuilder()
+    .setColor(embedColor)
+    .setTitle(`📅 ${match.kcTeam} VS ${match.opponent} - REPORTÉ `)
+    .setDescription(
+      `${match.leagueName} - ${match.serieName} - ${match.tournamentName}`
+    )
+    .addFields([
+      { name: "Nouvelle date", value: dateString, inline: true },
+      { name: "Nouvelle heure", value: timeString, inline: true },
+      { name: "Heure initiale", value: originalTimeString, inline: true },
       {
         name: "Games",
         value: `Bo${match.numberOfGames.toString()}`,
