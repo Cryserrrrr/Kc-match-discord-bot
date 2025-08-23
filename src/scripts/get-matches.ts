@@ -258,6 +258,26 @@ async function checkAndSaveMatches(prisma: PrismaClient) {
                 }
               }
             } else {
+              const { opponentName, opponentImage } =
+                pandaScoreService.getOpponentNameAndImage(match);
+
+              if (
+                dbMatch.opponent === "Unknown Team" &&
+                opponentName !== "Unknown Team"
+              ) {
+                await prisma.match.update({
+                  where: { id: matchId },
+                  data: {
+                    opponent: opponentName,
+                    opponentImage: opponentImage,
+                  },
+                });
+
+                logger.info(
+                  `🔄 Updated opponent name for match ${dbMatch.id}: "Unknown Team" → "${opponentName}"`
+                );
+              }
+
               if (
                 dbMatch.status === "not_started" &&
                 match.rescheduled === true
