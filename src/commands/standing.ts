@@ -350,21 +350,37 @@ export function formatMatchCompact(match: any) {
 
   if (match.scheduled_at) {
     const matchDate = new Date(match.scheduled_at);
-    matchText += `\n📅 ${matchDate.toLocaleDateString(
-      "fr-FR"
-    )} ${matchDate.toLocaleTimeString("fr-FR", {
+    const utcPlus2Date = new Date(matchDate.getTime() + 2 * 60 * 60 * 1000);
+    matchText += `\n📅 ${utcPlus2Date.toLocaleString("fr-FR", {
       hour: "2-digit",
       minute: "2-digit",
+      timeZone: "Europe/Paris",
     })}`;
   }
 
   if (
     match.status === "finished" &&
     match.results &&
-    match.results.length >= 2
+    match.results.length >= 2 &&
+    match.opponents &&
+    match.opponents.length >= 2
   ) {
-    const score1 = match.results[0]?.score || 0;
-    const score2 = match.results[1]?.score || 0;
+    // Map scores to the correct teams based on team_id
+    const team1Id = match.opponents[0]?.opponent?.id;
+    const team2Id = match.opponents[1]?.opponent?.id;
+
+    let score1 = 0;
+    let score2 = 0;
+
+    // Find the score for each team based on their ID
+    for (const result of match.results) {
+      if (result.team_id === team1Id) {
+        score1 = result.score || 0;
+      } else if (result.team_id === team2Id) {
+        score2 = result.score || 0;
+      }
+    }
+
     matchText += `\n🏅 ${score1}-${score2}`;
   }
 
