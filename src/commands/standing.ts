@@ -69,7 +69,7 @@ export async function execute(interaction: any) {
 
   try {
     const whereClause: any = {
-      status: "scheduled",
+      status: "not_started",
       kcId: selectedTeam,
     };
 
@@ -175,7 +175,10 @@ async function showTournamentSelector(
   });
 }
 
-async function displayStanding(interaction: any, tournament: Tournament) {
+export async function displayStanding(
+  interaction: any,
+  tournament: Tournament
+) {
   try {
     const cachedData = await prisma.standingCache.findFirst({
       where: {
@@ -220,7 +223,7 @@ async function displayStanding(interaction: any, tournament: Tournament) {
   }
 }
 
-async function sendStandingEmbed(
+export async function sendStandingEmbed(
   interaction: any,
   tournament: Tournament,
   data: any
@@ -327,7 +330,7 @@ async function sendStandingEmbed(
   await interaction.editReply({ embeds: [embed] });
 }
 
-function formatMatchCompact(match: any) {
+export function formatMatchCompact(match: any) {
   const status =
     match.status === "finished"
       ? "✅ Terminé"
@@ -368,7 +371,7 @@ function formatMatchCompact(match: any) {
   return matchText;
 }
 
-function organizeMatchesByStage(matches: any[]) {
+export function organizeMatchesByStage(matches: any[]) {
   return {
     quarterfinals: matches.filter((match) =>
       match.name.toLowerCase().includes("quarterfinal")
@@ -385,7 +388,7 @@ function organizeMatchesByStage(matches: any[]) {
   };
 }
 
-function createBracketEmbed(
+export function createBracketEmbed(
   tournamentName: string,
   bracketType: string,
   color: number,
@@ -427,7 +430,7 @@ function createBracketEmbed(
   return embed;
 }
 
-function createGrandFinalEmbed(tournamentName: string, matches: any[]) {
+export function createGrandFinalEmbed(tournamentName: string, matches: any[]) {
   const embed = new EmbedBuilder()
     .setTitle(`🏅 ${tournamentName} - Grand Final`)
     .setColor(0xffd700)

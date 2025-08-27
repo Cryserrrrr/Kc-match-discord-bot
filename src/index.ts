@@ -20,6 +20,7 @@ import {
 import { getStreamingUrl } from "./utils/casters";
 import { PandaScoreService } from "./services/pandascore";
 import { handleTicketModalSubmit } from "./commands/ticket";
+import { displayStanding } from "./commands/standing";
 
 config();
 
@@ -261,130 +262,13 @@ async function handleTournamentSelect(interaction: any) {
       hasBracket: match.hasBracket,
     };
 
-    const cachedData = await prisma.standingCache.findFirst({
-      where: {
-        tournamentId: tournament.id,
-        expiresAt: { gt: new Date() },
-      },
-    });
-
-    if (cachedData) {
-      const data = JSON.parse(cachedData.data);
-      await sendStandingEmbed(interaction, tournament, data);
-      return;
-    }
-
-    const pandaScoreService = new PandaScoreService();
-    let data;
-
-    if (tournament.hasBracket) {
-      data = await pandaScoreService.getTournamentBrackets(tournament.id);
-    } else {
-      data = await pandaScoreService.getTournamentStandings(tournament.id);
-    }
-
-    await prisma.standingCache.create({
-      data: {
-        tournamentId: tournament.id,
-        data: JSON.stringify(data),
-        expiresAt: new Date(Date.now() + 5 * 60 * 1000),
-      },
-    });
-
-    await sendStandingEmbed(interaction, tournament, data);
+    await displayStanding(interaction, tournament);
   } catch (error) {
     logger.error("Error in handleTournamentSelect:", error);
     await safeInteractionReply(interaction, {
       content: "Error retrieving standings. Please try again later.",
     });
   }
-}
-
-async function sendStandingEmbed(interaction: any, tournament: any, data: any) {
-  const { EmbedBuilder } = await import("discord.js");
-
-  const embed = new EmbedBuilder()
-    .setTitle(`🏆 ${tournament.name}`)
-    .setColor(0x0099ff)
-    .setTimestamp();
-
-  if (tournament.hasBracket) {
-    embed.setDescription("📊 **Tournament Bracket**");
-
-    if (Array.isArray(data) && data.length > 0) {
-      const matches = data.slice(0, 15);
-
-      let bracketText = "";
-      matches.forEach((match: any, index: number) => {
-        const status =
-          match.status === "finished"
-            ? "✅"
-            : match.status === "live"
-            ? "🔴"
-            : "⏳";
-
-        let matchText = `${status} **${match.name}**\n`;
-
-        if (match.opponents && match.opponents.length > 0) {
-          const team1 = match.opponents[0]?.opponent?.name || "TBD";
-          const team2 = match.opponents[1]?.opponent?.name || "TBD";
-          const score1 = match.results?.[0]?.score || 0;
-          const score2 = match.results?.[1]?.score || 0;
-
-          matchText += `   ${team1} ${score1} - ${score2} ${team2}\n`;
-        } else {
-          matchText += `   TBD vs TBD\n`;
-        }
-
-        if (match.begin_at) {
-          const matchDate = new Date(match.begin_at);
-          matchText += `   📅 ${matchDate.toLocaleDateString()} ${matchDate.toLocaleTimeString()}\n`;
-        }
-
-        bracketText += matchText + "\n";
-      });
-
-      embed.addFields({
-        name: "Matches",
-        value: bracketText || "No matches found",
-        inline: false,
-      });
-    }
-  } else {
-    embed.setDescription("📈 **Tournament Standings**");
-
-    if (Array.isArray(data) && data.length > 0) {
-      const standings = data.slice(0, 10);
-
-      let standingText = "";
-      standings.forEach((team: any) => {
-        const position = team.position;
-        const name = team.team.name;
-        const points = team.points || 0;
-        const wins = team.wins || 0;
-        const losses = team.losses || 0;
-
-        const medal =
-          position === 1
-            ? "🥇"
-            : position === 2
-            ? "🥈"
-            : position === 3
-            ? "🥉"
-            : `${position}.`;
-
-        standingText += `${medal} **${name}** - ${points}pts (${wins}W/${losses}L)\n`;
-      });
-
-      embed.addFields({
-        name: "Standings",
-        value: standingText || "No standings found",
-        inline: false,
-      });
-    }
-  }
-
-  await safeInteractionReply(interaction, { embeds: [embed] });
 }
 
 async function sendErrorMessage(interaction: any, message: string) {

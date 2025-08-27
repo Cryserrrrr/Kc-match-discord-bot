@@ -134,7 +134,7 @@ export class PandaScoreService {
       );
 
       logger.info(
-        `Found ${karmineMatches.length} Karmine Corp matches for today`
+        `Found ${karmineMatches.length} upcoming Karmine Corp matches`
       );
       return karmineMatches;
     } catch (error) {
