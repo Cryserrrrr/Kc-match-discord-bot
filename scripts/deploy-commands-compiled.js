@@ -3,12 +3,6 @@ const { readdirSync } = require("fs");
 const { join } = require("path");
 const { logger } = require("../dist/utils/logger");
 
-const NODE_ENV = process.env.NODE_ENV || "development";
-const isDevelopment = NODE_ENV === "development";
-
-logger.info("🔍 NODE_ENV:", NODE_ENV);
-logger.info("🔍 isDevelopment:", isDevelopment);
-
 async function deployCommands() {
   try {
     const commands = [];
@@ -53,51 +47,13 @@ async function deployCommands() {
       process.env.DISCORD_TOKEN
     );
 
-    if (isDevelopment) {
-      logger.info("🛠️  Development mode: Deploying commands to guild...");
+    logger.info("🚀 Deploying commands globally...");
 
-      logger.info("🗑️  Deleting existing commands...");
-      await rest.put(
-        Routes.applicationGuildCommands(
-          process.env.CLIENT_ID,
-          process.env.GUILD_ID
-        ),
-        {
-          body: [],
-        }
-      );
+    await rest.put(Routes.applicationCommands(process.env.CLIENT_ID), {
+      body: commands,
+    });
 
-      logger.info("⏳ Waiting for Discord to process deletion...");
-      await new Promise((resolve) => setTimeout(resolve, 2000));
-
-      logger.info("📤 Deploying new commands...");
-      logger.info(
-        "Commands to deploy:",
-        commands.map((cmd) => cmd.name)
-      );
-
-      await rest.put(
-        Routes.applicationGuildCommands(
-          process.env.CLIENT_ID,
-          process.env.GUILD_ID
-        ),
-        {
-          body: commands,
-        }
-      );
-
-      logger.info(
-        "✅ Successfully deployed commands to guild for development."
-      );
-    } else {
-      logger.info("🚀 Production mode: Deploying commands globally...");
-
-      await rest.put(Routes.applicationCommands(process.env.CLIENT_ID), {
-        body: commands,
-      });
-
-      logger.info("✅ Successfully deployed commands globally.");
-    }
+    logger.info("✅ Successfully deployed commands globally.");
   } catch (error) {
     logger.error("Error deploying commands:", error);
   }

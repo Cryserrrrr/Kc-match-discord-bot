@@ -10,6 +10,7 @@ import {
   sendScoreNotification,
   sendRescheduleNotification,
 } from "../utils/notificationUtils";
+import { ResultProcessor } from "../utils/resultProcessor";
 
 config();
 
@@ -449,6 +450,26 @@ async function updateExistingMatchesStatus(
               logger.error(
                 `Error sending score notification for match ${dbMatch.id}:`,
                 scoreNotificationError
+              );
+            }
+          }
+
+          if (
+            status === "announced" &&
+            score &&
+            dbMatch.status !== "finished"
+          ) {
+            try {
+              const discordClient = await getDiscordClient();
+              const resultProcessor = new ResultProcessor(
+                prisma,
+                discordClient
+              );
+              await resultProcessor.processMatchResults(dbMatch, score);
+            } catch (resultError) {
+              logger.error(
+                `Error processing results for match ${dbMatch.id}:`,
+                resultError
               );
             }
           }

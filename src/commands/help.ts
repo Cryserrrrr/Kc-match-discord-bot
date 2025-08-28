@@ -14,26 +14,52 @@ export async function execute(interaction: CommandInteraction) {
     const embed = new EmbedBuilder()
       .setTitle("Bot Karmine Corp - Aide")
       .setDescription(
-        "Ce bot automatise les annonces de matchs Karmine Corp sur Discord."
+        "Ce bot automatise les annonces de matchs Karmine Corp et propose un système de paris complet."
       )
       .setColor(0x0099ff)
       .addFields(
         {
-          name: "📋 Commandes disponibles",
+          name: "🏆 Commandes de Matchs",
+          value: `
+** /nextmatch** - Prochain match à venir
+** /standing** - Classements des tournois
+          `,
+          inline: false,
+        },
+        {
+          name: "🎲 Commandes de Paris",
+          value: `
+** /bet** - Placer un pari simple sur un match
+** /parlay** - Créer un pari combiné (accumulateur)
+** /duel** - Défier un utilisateur 1v1 sur un match
+** /mybets** - Consulter vos paris en cours
+          `,
+          inline: false,
+        },
+        {
+          name: "👤 Commandes de Profil",
+          value: `
+** /profil** - Afficher votre profil de parieur
+** /daily** - Récupérer votre récompense quotidienne
+** /settitle** - Choisir votre titre de profil
+          `,
+          inline: false,
+        },
+        {
+          name: "⚙️ Commandes d'Administration",
           value: `
 ** /config** - Configuration complète du bot
 • Canal d'annonce, rôles à mentionner
 • Notifications avant-match, de score et de mise à jour
 • Filtrage par équipes
-
-** /standing** - Classements des tournois
-
-** /nextmatch** - Prochain match
-
+          `,
+          inline: false,
+        },
+        {
+          name: "🎫 Commandes de Support",
+          value: `
 ** /ticket** - Créer un ticket de support
-
 ** /mytickets** - Liste vos tickets de support
-
 ** /invitation** - Lien d'invitation du bot
           `,
           inline: false,

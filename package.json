@@ -12,7 +12,9 @@
     "get-matches": "ts-node src/scripts/get-matches.ts",
     "update-matches": "ts-node src/scripts/update-matches.ts",
     "update-guild-stats": "ts-node src/scripts/update-guild-stats.ts",
-    "send-changelog": "ts-node src/scripts/send-changelog.ts"
+    "send-changelog": "ts-node src/scripts/send-changelog.ts",
+    "get-pastmatches": "ts-node src/scripts/get-pastmatches.ts",
+    "seed-titles": "ts-node src/scripts/seed-titles.ts"
   },
   "keywords": [
     "discord",

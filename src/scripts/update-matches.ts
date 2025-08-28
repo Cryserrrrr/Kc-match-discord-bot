@@ -47,8 +47,8 @@ async function updateMatches() {
           hasBracket: updatedMatchData.hasBracket ?? match.hasBracket,
           numberOfGames: updatedMatchData.numberOfGames || match.numberOfGames,
           beginAt: updatedMatchData.beginAt || match.beginAt,
-          status: match.status,
-          score: match.score,
+          status: updatedMatchData.status || match.status,
+          score: updatedMatchData.score || match.score,
         };
 
         await prisma.match.update({

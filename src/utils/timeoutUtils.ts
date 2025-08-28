@@ -128,7 +128,7 @@ export async function safeInteractionDefer(
 
   try {
     await withTimeout(
-      interaction.deferReply(),
+      interaction.deferReply({ ephemeral: true }),
       timeoutMs,
       ERROR_MESSAGES.TIMEOUT.INTERACTION_REPLY
     );

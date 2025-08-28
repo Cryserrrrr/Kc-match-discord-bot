@@ -11,52 +11,57 @@ datasource db {
 }
 
 model Match {
-  id              String   @id // PandaScore ID
-  kcTeam          String   // KC team name (KC, KCB, KCBS, etc.)
-  kcId            String   // KC team ID
-  opponent        String   // Opponent team name
-  opponentImage   String?  // Opponent team image URL
-  leagueName      String   // League name
-  leagueImage     String?  // League image URL
-  serieName       String   // Serie name
-  tournamentName  String   // Tournament name
-  tournamentId    String?  // Tournament ID from PandaScore
-  hasBracket      Boolean  @default(false)
-  numberOfGames   Int      // Number of games in the match
-  beginAt         DateTime // Match date/time
-  status          String   @default("not_started") // not_started, live, finished, announced, canceled
-  score           String?  // Match score (e.g., "2-1", "3-0")
-  createdAt       DateTime @default(now())
+  id             String   @id // PandaScore ID
+  kcTeam         String // KC team name (KC, KCB, KCBS, etc.)
+  kcId           String // KC team ID
+  opponent       String // Opponent team name
+  opponentImage  String? // Opponent team image URL
+  leagueName     String // League name
+  leagueImage    String? // League image URL
+  serieName      String // Serie name
+  tournamentName String // Tournament name
+  tournamentId   String? // Tournament ID from PandaScore
+  hasBracket     Boolean  @default(false)
+  numberOfGames  Int // Number of games in the match
+  beginAt        DateTime // Match date/time
+  status         String   @default("not_started") // not_started, live, finished, announced, canceled
+  score          String? // Match score (e.g., "2-1", "3-0")
+  createdAt      DateTime @default(now())
+
+  // Relations
+  bets       Bet[]
+  parlayLegs ParlayLeg[]
+  duels      Duel[]
 
   @@map("matches")
 }
 
 model StandingCache {
-  id          String @id @default(cuid())
+  id           String   @id @default(cuid())
   tournamentId String // Tournament ID
-  data        String // JSON string of standings/bracket data
-  expiresAt   DateTime // Cache expiration time
-  createdAt   DateTime @default(now())
+  data         String // JSON string of standings/bracket data
+  expiresAt    DateTime // Cache expiration time
+  createdAt    DateTime @default(now())
 
   @@map("standing_cache")
 }
 
 model GuildSettings {
-  guildId                    String @id
-  name                       String? // Discord server name
-  memberCount                Int    @default(0) // Number of members
-  channelId                  String // Discord channel ID
-  pingRoles                  String[] @default([]) // Array of role IDs to ping
-  filteredTeams              String[] @default([]) // Array of team IDs to filter matches
-  enablePreMatchNotifications Boolean @default(true) // Enable/disable 30-minute pre-match notifications
-  enableScoreNotifications    Boolean @default(true) // Enable/disable score notifications
-  enableUpdateNotifications   Boolean @default(true) // Enable/disable bot update notifications
-  joinedAt                   DateTime @default(now())
-  updatedAt                  DateTime? @updatedAt
+  guildId                     String    @id
+  name                        String? // Discord server name
+  memberCount                 Int       @default(0) // Number of members
+  channelId                   String // Discord channel ID
+  pingRoles                   String[]  @default([]) // Array of role IDs to ping
+  filteredTeams               String[]  @default([]) // Array of team IDs to filter matches
+  enablePreMatchNotifications Boolean   @default(true) // Enable/disable 30-minute pre-match notifications
+  enableScoreNotifications    Boolean   @default(true) // Enable/disable score notifications
+  enableUpdateNotifications   Boolean   @default(true) // Enable/disable bot update notifications
+  joinedAt                    DateTime  @default(now())
+  updatedAt                   DateTime? @updatedAt
 
   // Relations
-  commandStats    CommandStat[]
-  tickets         Ticket[]
+  commandStats       CommandStat[]
+  tickets            Ticket[]
   performanceMetrics PerformanceMetric[]
 
   @@map("guild_settings")
@@ -65,62 +70,115 @@ model GuildSettings {
 // New models for statistics
 
 model CommandStat {
-  id        String   @id @default(cuid())
-  guildId   String   // Discord Guild ID (can be null for global stats)
+  id          String   @id @default(cuid())
+  guildId     String // Discord Guild ID (can be null for global stats)
   commandName String // Command name (nextmatch, standing, etc.)
-  userId    String   // Discord User ID
-  username  String   // Discord username
-  teamArg   String?  // Team argument used (for popularity stats)
-  executedAt DateTime @default(now())
+  userId      String // Discord User ID
+  username    String // Discord username
+  teamArg     String? // Team argument used (for popularity stats)
+  executedAt  DateTime @default(now())
 
   // Relations
-  guild     GuildSettings?   @relation(fields: [guildId], references: [guildId])
+  guild GuildSettings? @relation(fields: [guildId], references: [guildId])
 
   @@map("command_stats")
 }
 
 model Ticket {
-  id          String   @id @default(cuid())
-  guildId     String   // Discord Guild ID
-  userId      String   // Discord User ID
-  username    String   // Discord username
+  id          String       @id @default(cuid())
+  guildId     String // Discord Guild ID
+  userId      String // Discord User ID
+  username    String // Discord username
   type        TicketType // Ticket type (bug, improvement)
   status      TicketStatus @default(OPEN) // Ticket status
-  description String?  // Optional description
-  answer      String?  // Response to the request
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  description String? // Optional description
+  answer      String? // Response to the request
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
 
   // Relations
-  guild       GuildSettings    @relation(fields: [guildId], references: [guildId])
+  guild GuildSettings @relation(fields: [guildId], references: [guildId])
 
   @@map("tickets")
 }
 
 model PerformanceMetric {
-  id              String   @id @default(cuid())
-  guildId         String?  // Discord Guild ID (can be null for global metrics)
-  commandName     String   // Command name
-  responseTime    Int      // Response time in milliseconds
-  success         Boolean  // Whether the command executed successfully
-  errorMessage    String?  // Error message if failed
-  executedAt      DateTime @default(now())
+  id           String   @id @default(cuid())
+  guildId      String? // Discord Guild ID (can be null for global metrics)
+  commandName  String // Command name
+  responseTime Int // Response time in milliseconds
+  success      Boolean // Whether the command executed successfully
+  errorMessage String? // Error message if failed
+  executedAt   DateTime @default(now())
 
   // Relations
-  guild           GuildSettings?   @relation(fields: [guildId], references: [guildId])
+  guild GuildSettings? @relation(fields: [guildId], references: [guildId])
 
   @@map("performance_metrics")
 }
 
-
-
 model ChangeLog {
-  id          String   @id @default(cuid())
-  text        String   // Text of the change
-  status      String   // Status of the change (new, announced)
-  createdAt   DateTime @default(now())
+  id        String   @id @default(cuid())
+  text      String // Text of the change
+  status    String // Status of the change (new, announced)
+  createdAt DateTime @default(now())
 
   @@map("change_logs")
+}
+
+// New models for betting system
+
+model User {
+  id        String   @id // Discord User ID
+  username  String // Discord username
+  points    Int      @default(0) // Perticoin balance
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  bets               Bet[]
+  dailyRewards       DailyReward[]
+  seasonParticipants SeasonParticipant[]
+  profile            UserProfile?
+  parlays            Parlay[]
+  duelsChallenged    Duel[]              @relation("DuelChallenger")
+  duelsOpposed       Duel[]              @relation("DuelOpponent")
+  unlockedTitles     UserUnlockedTitle[]
+
+  @@map("users")
+}
+
+model Bet {
+  id        String    @id @default(cuid())
+  guildId   String    @default("")
+  userId    String // Discord User ID
+  matchId   String // Match ID
+  type      BetType
+  selection String // team name or score like "2-1"
+  amount    Int // Amount bet
+  odds      Float // Odds at the time of bet
+  status    BetStatus @default(ACTIVE) // ACTIVE, WON, LOST, CANCELLED
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  // Relations
+  user           User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  match          Match          @relation(fields: [matchId], references: [id], onDelete: Cascade)
+  tournamentLink TournamentBet?
+
+  @@map("bets")
+}
+
+model DailyReward {
+  id        String   @id @default(cuid())
+  userId    String // Discord User ID
+  amount    Int // Amount received
+  claimedAt DateTime @default(now())
+
+  // Relations
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("daily_rewards")
 }
 
 enum TicketType {
@@ -133,4 +191,253 @@ enum TicketStatus {
   IN_PROGRESS
   RESOLVED
   CLOSED
-} 
+}
+
+enum BetStatus {
+  ACTIVE
+  WON
+  LOST
+  CANCELLED
+}
+
+enum BetType {
+  TEAM
+  SCORE
+}
+
+// Seasons and rankings
+
+model Season {
+  id        String       @id @default(cuid())
+  name      String
+  status    SeasonStatus @default(PLANNED) // PLANNED, ACTIVE, FINISHED
+  startsAt  DateTime?
+  endsAt    DateTime?
+  createdAt DateTime     @default(now())
+
+  participants SeasonParticipant[]
+
+  @@map("seasons")
+}
+
+model SeasonParticipant {
+  id           String   @id @default(cuid())
+  seasonId     String
+  userId       String
+  points       Int      @default(0)
+  totalWagered Int      @default(0)
+  totalWon     Int      @default(0)
+  betsWon      Int      @default(0)
+  betsLost     Int      @default(0)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  season Season @relation(fields: [seasonId], references: [id], onDelete: Cascade)
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([seasonId, userId])
+  @@map("season_participants")
+}
+
+enum SeasonStatus {
+  PLANNED
+  ACTIVE
+  FINISHED
+}
+
+// User profile, badges and titles
+
+model Title {
+  id   String  @id @default(cuid())
+  name String  @unique
+  icon String?
+
+  users UserProfile[]
+  unlocks UserUnlockedTitle[]
+
+  @@map("titles")
+}
+
+// Badge model removed
+
+model UserProfile {
+  userId    String   @id
+  titleId   String?
+  bio       String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user  User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  title Title? @relation(fields: [titleId], references: [id])
+
+  @@map("user_profiles")
+}
+
+model UserUnlockedTitle {
+  id         String   @id @default(cuid())
+  userId     String
+  titleId    String
+  unlockedAt DateTime @default(now())
+
+  user  User  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  title Title @relation(fields: [titleId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, titleId], name: "userId_titleId")
+  @@map("user_unlocked_titles")
+}
+
+// UserBadge model removed
+
+// Parlays (accumulator bets)
+
+model Parlay {
+  id        String    @id @default(cuid())
+  guildId   String    @default("")
+  userId    String
+  amount    Int
+  totalOdds Float
+  status    BetStatus @default(ACTIVE)
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  user           User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  legs           ParlayLeg[]
+  tournamentLink TournamentParlay?
+
+  @@map("parlays")
+}
+
+model ParlayLeg {
+  id        String        @id @default(cuid())
+  parlayId  String
+  matchId   String
+  type      ParlayLegType // TEAM or SCORE
+  selection String // team name or score like "2-1"
+  odds      Float
+
+  parlay Parlay @relation(fields: [parlayId], references: [id], onDelete: Cascade)
+  match  Match  @relation(fields: [matchId], references: [id], onDelete: Cascade)
+
+  @@map("parlay_legs")
+}
+
+enum ParlayLegType {
+  TEAM
+  SCORE
+}
+
+// Duels (1v1 challenges)
+
+model Duel {
+  id             String     @id @default(cuid())
+  guildId        String     @default("")
+  matchId        String
+  challengerId   String
+  opponentId     String
+  challengerTeam String
+  opponentTeam   String
+  amount         Int
+  status         DuelStatus @default(PENDING)
+  winnerUserId   String?
+  createdAt      DateTime   @default(now())
+  updatedAt      DateTime   @updatedAt
+
+  match          Match           @relation(fields: [matchId], references: [id], onDelete: Cascade)
+  challenger     User            @relation("DuelChallenger", fields: [challengerId], references: [id])
+  opponent       User            @relation("DuelOpponent", fields: [opponentId], references: [id])
+  tournamentLink TournamentDuel?
+
+  @@map("duels")
+}
+
+enum DuelStatus {
+  PENDING
+  ACCEPTED
+  RESOLVED
+  CANCELLED
+}
+
+// Tournaments per guild
+
+enum TournamentStatus {
+  REGISTRATION
+  ACTIVE
+  FINISHED
+  CANCELLED
+}
+
+model Tournament {
+  id                 String           @id @default(cuid())
+  guildId            String
+  name               String
+  status             TournamentStatus @default(REGISTRATION)
+  createdBy          String
+  registrationEndsAt DateTime
+  startsAt           DateTime?
+  endsAt             DateTime?
+  virtualStake       Int              @default(100)
+  messageChannelId   String?
+  messageId          String?
+  createdAt          DateTime         @default(now())
+  updatedAt          DateTime         @updatedAt
+
+  participants TournamentParticipant[]
+  bets         TournamentBet[]
+  parlays      TournamentParlay[]
+  duels        TournamentDuel[]
+
+  @@map("tournaments")
+}
+
+model TournamentParticipant {
+  id           String   @id @default(cuid())
+  tournamentId String
+  userId       String
+  points       Int      @default(0)
+  betsWon      Int      @default(0)
+  betsLost     Int      @default(0)
+  parlaysWon   Int      @default(0)
+  parlaysLost  Int      @default(0)
+  duelsWon     Int      @default(0)
+  duelsLost    Int      @default(0)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  tournament Tournament @relation(fields: [tournamentId], references: [id], onDelete: Cascade)
+
+  @@unique([tournamentId, userId])
+  @@map("tournament_participants")
+}
+
+model TournamentBet {
+  id           String @id @default(cuid())
+  tournamentId String
+  betId        String @unique
+
+  tournament Tournament @relation(fields: [tournamentId], references: [id], onDelete: Cascade)
+  bet        Bet        @relation(fields: [betId], references: [id], onDelete: Cascade)
+
+  @@map("tournament_bets")
+}
+
+model TournamentParlay {
+  id           String @id @default(cuid())
+  tournamentId String
+  parlayId     String @unique
+
+  tournament Tournament @relation(fields: [tournamentId], references: [id], onDelete: Cascade)
+  parlay     Parlay     @relation(fields: [parlayId], references: [id], onDelete: Cascade)
+
+  @@map("tournament_parlays")
+}
+
+model TournamentDuel {
+  id           String @id @default(cuid())
+  tournamentId String
+  duelId       String @unique
+
+  tournament Tournament @relation(fields: [tournamentId], references: [id], onDelete: Cascade)
+  duel       Duel       @relation(fields: [duelId], references: [id], onDelete: Cascade)
+
+  @@map("tournament_duels")
+}

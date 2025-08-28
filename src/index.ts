@@ -1,76 +1,37 @@
-import {
-  Client,
-  GatewayIntentBits,
-  Collection,
-  ActivityType,
-  AuditLogEvent,
-} from "discord.js";
+import { Client, GatewayIntentBits, Collection } from "discord.js";
 import { config } from "dotenv";
 import { PrismaClient } from "@prisma/client";
 import { loadCommands } from "./commands/commandLoader";
 import { logger } from "./utils/logger";
-import { createMatchEmbed } from "./utils/embedBuilder";
-import { getTeamDisplayName } from "./utils/teamMapper";
-import { CONFIG, ERROR_MESSAGES } from "./utils/config";
+import { InteractionHandlers } from "./handlers/interactionHandlers";
 import {
-  safeInteractionDefer,
-  safeInteractionReply,
-  withTimeout,
-} from "./utils/timeoutUtils";
-import { getStreamingUrl } from "./utils/casters";
-import { PandaScoreService } from "./services/pandascore";
-import { handleTicketModalSubmit } from "./commands/ticket";
-import { displayStanding } from "./commands/standing";
+  handleDuelAccept,
+  handleDuelAmountSubmit,
+  handleDuelCancel,
+  handleDuelMatchSelect,
+  handleDuelReject,
+  handleDuelTeamPick,
+} from "./commands/duel";
+import { EventHandlers } from "./handlers/eventHandlers";
+import { StatusHandler } from "./handlers/statusHandler";
 
 config();
 
 export const prisma = new PrismaClient();
 
 export const client = new Client({
-  intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages],
+  intents: [
+    GatewayIntentBits.Guilds,
+    GatewayIntentBits.GuildMessages,
+    GatewayIntentBits.DirectMessages,
+  ],
 }) as Client & { commands: Collection<string, any> };
 
 client.commands = new Collection();
 
-// Constants for repeated content
-const COMMANDS_LIST =
-  "• `/nextmatch` - Voir le prochain match\n• `/standing` - Voir les classements\n• `/ticket` - Créer un ticket de support\n• `/mytickets` - Voir vos tickets\n• `/config` - Configurer le bot";
-
-const CONFIG_DESCRIPTION =
-  "Utilisez `/config` pour définir :\n• Le canal d'annonce des matchs\n• Les rôles à mentionner\n• Les équipes à suivre\n• Les notifications avant-match, de score et de mise à jour";
-
-const createWelcomeEmbed = (guildName: string, isDM: boolean = false) => ({
-  color: 0x00ff00,
-  title: isDM
-    ? "🎉 Merci d'avoir ajouté le Bot Karmine Corp !"
-    : "🎉 Bot Karmine Corp ajouté avec succès !",
-  description: `Le bot a été ajouté ${
-    isDM ? "avec succès au serveur" : "au serveur"
-  } **${guildName}** !`,
-  fields: [
-    {
-      name: "⚙️ Configuration requise",
-      value: isDM
-        ? "Pour que les messages automatiques fonctionnent correctement, vous devez configurer le bot avec la commande `/config`."
-        : "Pour que les messages automatiques fonctionnent correctement, un administrateur doit configurer le bot avec la commande `/config`.",
-      inline: false,
-    },
-    {
-      name: "📋 Commandes disponibles",
-      value: COMMANDS_LIST,
-      inline: false,
-    },
-    {
-      name: "🔧 Configuration",
-      value: CONFIG_DESCRIPTION,
-      inline: false,
-    },
-  ],
-  footer: {
-    text: "Bot Karmine Corp - Configuration automatique",
-  },
-  timestamp: new Date().toISOString(),
-});
+const interactionHandlers = new InteractionHandlers(prisma);
+const eventHandlers = new EventHandlers(prisma);
+const statusHandler = new StatusHandler(client, prisma);
 
 const handleShutdown = async () => {
   logger.info("Shutting down bot...");
@@ -89,9 +50,7 @@ client.once("ready", async () => {
   try {
     await loadCommands(client);
     logger.info("Commands loaded successfully");
-
-    await updateBotStatus();
-    setInterval(updateBotStatus, 5 * 60 * 1000);
+    statusHandler.startStatusUpdates();
   } catch (error) {
     logger.error("Error during bot initialization:", error);
   }
@@ -101,359 +60,167 @@ client.on("interactionCreate", async (interaction) => {
   if (interaction.isChatInputCommand()) {
     const command = client.commands.get(interaction.commandName);
     if (!command) return;
+    await interactionHandlers.handleCommand(interaction, command);
+  }
 
-    try {
-      if (interaction.commandName !== "ticket") {
-        await safeInteractionDefer(interaction);
-      }
+  if (interaction.isStringSelectMenu()) {
+    const customId = interaction.customId;
 
-      await command.execute(interaction);
-    } catch (error) {
-      logger.error(
-        `Error executing command ${interaction.commandName}:`,
-        error
-      );
-      await sendErrorMessage(
+    if (customId === "team_select") {
+      await interactionHandlers.handleTeamSelect(interaction);
+    } else if (customId === "tournament_select") {
+      await interactionHandlers.handleTournamentSelect(interaction);
+    } else if (customId === "mybets_select") {
+      const { handleMyBetsSelect } = await import("./commands/mybets");
+      await handleMyBetsSelect(interaction);
+    } else if (customId === "duel_select_match") {
+      await handleDuelMatchSelect(interaction);
+    } else if (customId === "select_match") {
+      await interactionHandlers.handleBettingInteraction(
         interaction,
-        ERROR_MESSAGES.GENERAL.COMMAND_EXECUTION_ERROR
+        interactionHandlers.getBettingHandlers().select_match,
+        "match selection"
       );
+    } else if (customId.startsWith("bet_score_select_")) {
+      await interactionHandlers.handleBettingInteraction(
+        interaction,
+        interactionHandlers.getBettingHandlers().bet_score_select,
+        "score select"
+      );
+    } else if (customId === "parlay_team_match") {
+      await interactionHandlers.handleParlayInteraction(
+        interaction,
+        interactionHandlers.getParlayHandlers().team_match_select,
+        "parlay team match select"
+      );
+    } else if (customId === "parlay_team_pick") {
+      await interactionHandlers.handleParlayInteraction(
+        interaction,
+        interactionHandlers.getParlayHandlers().team_pick,
+        "parlay team pick"
+      );
+    } else if (customId === "parlay_score_match") {
+      await interactionHandlers.handleParlayInteraction(
+        interaction,
+        interactionHandlers.getParlayHandlers().score_match_select,
+        "parlay score match select"
+      );
+    } else if (customId === "parlay_score_pick") {
+      await interactionHandlers.handleParlayInteraction(
+        interaction,
+        interactionHandlers.getParlayHandlers().score_pick,
+        "parlay score pick"
+      );
+    } else if (customId === "title_selection") {
+      await interactionHandlers.handleTitleSelection(interaction);
     }
   }
 
-  if (
-    interaction.isStringSelectMenu() &&
-    interaction.customId === "team_select"
-  ) {
-    try {
-      await safeInteractionDefer(interaction);
+  if (interaction.isButton()) {
+    const customId = interaction.customId;
 
-      await handleTeamSelect(interaction);
-    } catch (error) {
-      logger.error("Error handling team select:", error);
-      await sendErrorMessage(
+    if (customId.startsWith("bet_team_")) {
+      await interactionHandlers.handleBettingInteraction(
         interaction,
-        ERROR_MESSAGES.GENERAL.INTERACTION_ERROR
+        interactionHandlers.getBettingHandlers().bet_team,
+        "team selection"
       );
+    } else if (customId.startsWith("bet_score_")) {
+      await interactionHandlers.handleBettingInteraction(
+        interaction,
+        interactionHandlers.getBettingHandlers().bet_score,
+        "score selection"
+      );
+    } else if (customId.startsWith("duel_team_")) {
+      await handleDuelTeamPick(interaction);
+    } else if (customId === "duel_cancel") {
+      await handleDuelCancel(interaction);
+    } else if (customId.startsWith("duel_accept_")) {
+      await handleDuelAccept(interaction);
+    } else if (customId.startsWith("duel_reject_")) {
+      await handleDuelReject(interaction);
+    } else if (customId === "back_to_matches") {
+      await interactionHandlers.handleBettingInteraction(
+        interaction,
+        interactionHandlers.getBettingHandlers().back_to_matches,
+        "back to matches"
+      );
+    } else if (customId === "back_to_match") {
+      await interactionHandlers.handleBettingInteraction(
+        interaction,
+        interactionHandlers.getBettingHandlers().back_to_match,
+        "back to match"
+      );
+    } else if (customId === "parlay_add_team") {
+      await interactionHandlers.handleParlayInteraction(
+        interaction,
+        interactionHandlers.getParlayHandlers().add_team,
+        "parlay add team"
+      );
+    } else if (customId === "parlay_add_score") {
+      await interactionHandlers.handleParlayInteraction(
+        interaction,
+        interactionHandlers.getParlayHandlers().add_score,
+        "parlay add score"
+      );
+    } else if (customId === "parlay_confirm") {
+      await interactionHandlers.handleParlayInteraction(
+        interaction,
+        interactionHandlers.getParlayHandlers().confirm,
+        "parlay confirm"
+      );
+    } else if (customId === "parlay_cancel") {
+      await interactionHandlers.handleParlayInteraction(
+        interaction,
+        interactionHandlers.getParlayHandlers().cancel,
+        "parlay cancel"
+      );
+    } else if (customId.startsWith("tournament_join_")) {
+      await interactionHandlers.handleTournamentJoin(interaction);
     }
   }
 
-  if (
-    interaction.isStringSelectMenu() &&
-    interaction.customId === "tournament_select"
-  ) {
-    try {
-      await safeInteractionDefer(interaction);
+  if (interaction.isModalSubmit()) {
+    const customId = interaction.customId;
 
-      await handleTournamentSelect(interaction);
-    } catch (error) {
-      logger.error("Error handling tournament select:", error);
-      await sendErrorMessage(
-        interaction,
-        ERROR_MESSAGES.GENERAL.INTERACTION_ERROR
+    if (customId.startsWith("ticket_modal_")) {
+      await interactionHandlers.handleTicketModal(interaction);
+    } else if (customId === "tournament_create_modal") {
+      const { handleTournamentCreateModal } = await import(
+        "./commands/tournament"
       );
-    }
-  }
-
-  if (
-    interaction.isModalSubmit() &&
-    interaction.customId.startsWith("ticket_modal_")
-  ) {
-    try {
-      await handleTicketModalSubmit(interaction);
-    } catch (error) {
-      logger.error("Error handling ticket modal submit:", error);
-      await sendErrorMessage(
+      await handleTournamentCreateModal(interaction);
+    } else if (customId.startsWith("bet_amount_")) {
+      await interactionHandlers.handleBettingInteraction(
         interaction,
-        ERROR_MESSAGES.GENERAL.INTERACTION_ERROR
+        interactionHandlers.getBettingHandlers().bet_amount,
+        "bet amount"
       );
+    } else if (customId.startsWith("bet_score_amount_")) {
+      await interactionHandlers.handleBettingInteraction(
+        interaction,
+        interactionHandlers.getBettingHandlers().bet_score_amount,
+        "score bet amount"
+      );
+    } else if (customId.startsWith("duel_amount_")) {
+      await handleDuelAmountSubmit(interaction);
     }
   }
 });
-
-async function handleTeamSelect(interaction: any) {
-  const selectedTeam = interaction.values[0];
-  const guildId = interaction.guildId!;
-
-  try {
-    const guildSettings = await withTimeout(
-      prisma.guildSettings.findUnique({
-        where: { guildId },
-      }),
-      CONFIG.TIMEOUTS.DATABASE_QUERY,
-      ERROR_MESSAGES.TIMEOUT.DATABASE_QUERY
-    );
-
-    const filteredTeams = (guildSettings as any)?.filteredTeams || [];
-
-    const whereClause: any = {
-      beginAt: { gte: new Date() },
-    };
-
-    if (selectedTeam !== "all") {
-      whereClause.kcId = selectedTeam;
-    } else if (filteredTeams.length > 0) {
-      whereClause.kcId = { in: filteredTeams };
-    }
-
-    const nextMatch = await withTimeout(
-      prisma.match.findFirst({
-        where: whereClause,
-        orderBy: { beginAt: "asc" },
-      }),
-      CONFIG.TIMEOUTS.DATABASE_QUERY,
-      ERROR_MESSAGES.TIMEOUT.DATABASE_QUERY
-    );
-
-    if (!nextMatch) {
-      const teamText =
-        selectedTeam === "all"
-          ? "Karmine Corp"
-          : getTeamDisplayName(selectedTeam);
-      await safeInteractionReply(interaction, {
-        content: `No upcoming match found for ${teamText}! 🏆`,
-      });
-      return;
-    }
-
-    const embed = await createMatchEmbed({
-      kcTeam: nextMatch.kcTeam,
-      kcId: nextMatch.kcId,
-      opponent: nextMatch.opponent,
-      opponentImage: nextMatch.opponentImage || undefined,
-      tournamentName: nextMatch.tournamentName,
-      leagueName: nextMatch.leagueName,
-      leagueImage: nextMatch.leagueImage || undefined,
-      serieName: nextMatch.serieName,
-      numberOfGames: nextMatch.numberOfGames,
-      beginAt: nextMatch.beginAt,
-    });
-
-    const response = { embeds: [embed] };
-    await safeInteractionReply(interaction, response);
-  } catch (error) {
-    logger.error("Error in handleTeamSelect:", error);
-    throw error;
-  }
-}
-
-async function handleTournamentSelect(interaction: any) {
-  const selectedTournamentId = interaction.values[0];
-
-  try {
-    const match = await prisma.match.findFirst({
-      where: { tournamentId: selectedTournamentId },
-      select: {
-        tournamentId: true,
-        tournamentName: true,
-        hasBracket: true,
-      },
-    });
-
-    if (!match) {
-      await safeInteractionReply(interaction, {
-        content: "Tournament not found! 🏆",
-      });
-      return;
-    }
-
-    const tournament = {
-      id: match.tournamentId!,
-      name: match.tournamentName,
-      hasBracket: match.hasBracket,
-    };
-
-    await displayStanding(interaction, tournament);
-  } catch (error) {
-    logger.error("Error in handleTournamentSelect:", error);
-    await safeInteractionReply(interaction, {
-      content: "Error retrieving standings. Please try again later.",
-    });
-  }
-}
-
-async function sendErrorMessage(interaction: any, message: string) {
-  try {
-    await safeInteractionReply(interaction, {
-      content: message,
-      ephemeral: true,
-    });
-  } catch (error) {
-    logger.error("Error sending error message:", error);
-  }
-}
-
-async function updateBotStatus() {
-  try {
-    const liveMatch = await prisma.match.findFirst({
-      where: {
-        status: "live",
-      },
-      orderBy: {
-        beginAt: "asc",
-      },
-    });
-
-    if (liveMatch) {
-      const statusText = `${liveMatch.kcTeam} vs ${liveMatch.opponent}`;
-      const streamingUrl = getStreamingUrl(liveMatch.leagueName);
-
-      if (streamingUrl) {
-        client.user?.setActivity(statusText, {
-          type: ActivityType.Streaming,
-          url: streamingUrl,
-        });
-        logger.debug(
-          `Updated bot status to: Streaming ${statusText} on ${streamingUrl}`
-        );
-      } else {
-        client.user?.setActivity(statusText, {
-          type: ActivityType.Streaming,
-          url: "https://www.twitch.tv/kamet0",
-        });
-        logger.debug(
-          `Updated bot status to: Streaming ${statusText} (no streaming URL found)`
-        );
-      }
-    } else {
-      client.user?.setPresence({ activities: [] });
-      logger.debug("Cleared bot status - no live matches");
-    }
-  } catch (error) {
-    logger.error("Error updating bot status:", error);
-  }
-}
 
 client.on("error", (error) => {
   logger.error("Discord client error:", error);
 });
 
-client.on("guildCreate", async (guild) => {
-  try {
-    logger.info(`Bot added to guild: ${guild.name} (${guild.id})`);
+client.on("guildCreate", (guild) => eventHandlers.handleGuildCreate(guild));
+client.on("guildDelete", (guild) => eventHandlers.handleGuildDelete(guild));
 
-    await prisma.guildSettings.upsert({
-      where: { guildId: guild.id },
-      update: {
-        name: guild.name,
-        memberCount: guild.memberCount,
-        updatedAt: new Date(),
-      },
-      create: {
-        guildId: guild.id,
-        name: guild.name,
-        memberCount: guild.memberCount,
-        channelId: "",
-      },
-    });
-
-    let welcomeMessageSent = false;
-
-    const botMember = guild.members.me;
-    const hasAuditLogPermission = botMember?.permissions.has("ViewAuditLog");
-
-    if (hasAuditLogPermission) {
-      try {
-        const auditLogs = await guild.fetchAuditLogs({
-          type: AuditLogEvent.BotAdd,
-          limit: 1,
-        });
-
-        const botAddLog = auditLogs.entries.first();
-        if (botAddLog && botAddLog.executor) {
-          const executor = botAddLog.executor;
-
-          try {
-            await executor.send({
-              embeds: [createWelcomeEmbed(guild.name, true)],
-            });
-
-            logger.info(
-              `Welcome message sent to ${executor.tag} for guild ${guild.name}`
-            );
-            welcomeMessageSent = true;
-          } catch (dmError) {
-            logger.warn(`Could not send DM to ${executor.tag}:`, dmError);
-          }
-        }
-      } catch (auditError) {
-        logger.warn(
-          `Could not access audit logs for guild ${guild.name}:`,
-          auditError
-        );
-      }
-    } else {
-      logger.info(
-        `Bot does not have ViewAuditLog permission in guild ${guild.name}, will use fallback method`
-      );
-    }
-
-    if (!welcomeMessageSent) {
-      try {
-        const textChannels = guild.channels.cache.filter(
-          (channel) =>
-            channel.type === 0 &&
-            channel.permissionsFor(guild.members.me!)?.has("SendMessages")
-        );
-
-        if (textChannels.size > 0) {
-          const firstChannel = textChannels.first();
-          if (firstChannel && firstChannel.isTextBased()) {
-            await firstChannel.send({
-              embeds: [createWelcomeEmbed(guild.name, false)],
-            });
-
-            logger.info(
-              `Welcome message sent to channel #${firstChannel.name} in guild ${guild.name}`
-            );
-          }
-        }
-      } catch (channelError) {
-        logger.warn(
-          `Could not send welcome message to any channel in guild ${guild.name}:`,
-          channelError
-        );
-      }
-    }
-
-    logger.info(
-      `Guild settings created for guild: ${guild.name} (${guild.id})`
-    );
-  } catch (error) {
-    logger.error(`Error handling guild create for guild ${guild.id}:`, error);
-  }
-});
-
-client.on("guildDelete", async (guild) => {
-  try {
-    logger.info(`Bot removed from guild: ${guild.name} (${guild.id})`);
-
-    await prisma.guildSettings.deleteMany({
-      where: {
-        guildId: guild.id,
-      },
-    });
-
-    logger.info(
-      `Guild settings deleted for guild: ${guild.name} (${guild.id})`
-    );
-  } catch (error) {
-    logger.error(`Error deleting guild settings for guild ${guild.id}:`, error);
-  }
-});
-
-process.on("SIGINT", async () => {
-  await handleShutdown();
-});
-
-process.on("SIGTERM", async () => {
-  await handleShutdown();
-});
-
+process.on("SIGINT", handleShutdown);
+process.on("SIGTERM", handleShutdown);
 process.on("uncaughtException", (error) => {
   logger.error("Uncaught Exception:", error);
   process.exit(1);
 });
-
 process.on("unhandledRejection", (reason, promise) => {
   logger.error("Unhandled Rejection at:", promise, "reason:", reason);
   process.exit(1);

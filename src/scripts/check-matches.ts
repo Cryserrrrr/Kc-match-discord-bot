@@ -38,7 +38,6 @@ async function withRetry<T>(
         throw lastError;
       }
 
-      console.log(`⏳ Retrying in ${delay}ms...`);
       await new Promise((resolve) => setTimeout(resolve, delay));
 
       delay = Math.min(delay * 2, MAX_DELAY);
@@ -49,8 +48,6 @@ async function withRetry<T>(
 }
 
 async function main() {
-  console.log("🔍 Starting 24h match check from database...");
-
   let prisma: PrismaClient | null = null;
   let client: Client | null = null;
 
@@ -79,13 +76,11 @@ async function main() {
 
         client!.once("ready", () => {
           clearTimeout(timeout);
-          console.log(`✅ Bot logged in as ${client!.user?.tag}`);
           resolve();
         });
       });
     });
 
-    // Get matches for next 24 hours from database with retry
     const matches = await withRetry(async () => {
       if (!prisma) throw new Error("Prisma client not initialized");
       return await getMatchesNext24Hours(prisma);
@@ -103,14 +98,12 @@ async function main() {
         `📅 Found ${matches.length} matches for the next 24 hours in database`
       );
 
-      // Announce all matches with retry
       const hasAnnouncements = await withRetry(async () => {
         if (!client || !prisma) throw new Error("Clients not initialized");
         const guildSettings = await prisma.guildSettings.findMany();
         return await sendDailyMatchAnnouncement(client, guildSettings, matches);
       });
 
-      // Only send "no matches" message if no guild received any announcements
       if (!hasAnnouncements) {
         logger.info(
           "📭 No guilds received match announcements - sending no matches message"
