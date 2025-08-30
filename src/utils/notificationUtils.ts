@@ -498,8 +498,8 @@ export async function sendDailyMatchAnnouncement(
         const roleMentions = formatRoleMentions(pingRoles);
         const pingMessage =
           pingRoles.length > 0
-            ? `${roleMentions} Match du jour !`
-            : "Match du jour !";
+            ? `${roleMentions} Match(s) des prochaines 24h !`
+            : "Match(s) des prochaines 24h !";
 
         await channel.send(pingMessage);
 
