@@ -135,15 +135,18 @@ async function main() {
 }
 
 async function getMatchesNext24Hours(prisma: PrismaClient) {
-  const now = new Date();
-  const tomorrow = new Date(now);
+   const now = new Date();
+   const dateMinusOne = new Date(now);
+dateMinusOne.setMinutes(dateMinusOne.getMinutes() - 1);
+
+  const tomorrow = new Date(dateMinusOne);
   tomorrow.setDate(tomorrow.getDate() + 1);
 
   try {
     const matches = await prisma.match.findMany({
       where: {
         beginAt: {
-          gte: now,
+          gte: dateMinusOne,
           lte: tomorrow,
         },
       },
