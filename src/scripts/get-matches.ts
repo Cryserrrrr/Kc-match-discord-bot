@@ -455,7 +455,7 @@ async function updateExistingMatchesStatus(
           }
 
           if (
-            status === "announced" &&
+            status === "finished" &&
             score &&
             dbMatch.status !== "finished"
           ) {
