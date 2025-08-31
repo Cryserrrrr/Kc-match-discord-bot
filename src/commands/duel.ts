@@ -13,6 +13,7 @@ import {
 import { prisma } from "../index";
 import { logger } from "../utils/logger";
 import { TitleManager } from "../utils/titleManager";
+import { formatDateTime } from "../utils/dateUtils";
 
 const duelSessions = new Map<string, { amount: number }>();
 
@@ -155,9 +156,7 @@ export async function execute(interaction: any) {
 
     const options = upcomingMatches.map((m: any) => ({
       label: `${m.kcTeam} vs ${m.opponent}`,
-      description: `${m.tournamentName} - ${new Date(
-        m.beginAt
-      ).toLocaleString()}`,
+      description: `${m.tournamentName} - ${formatDateTime(m.beginAt)}`,
       value: `${m.id}_${opponent.id}`,
     }));
 
@@ -243,11 +242,7 @@ export async function handleDuelMatchSelect(interaction: any) {
       .setDescription("Choisissez votre équipe pour ce duel")
       .addFields(
         { name: "Tournoi", value: match.tournamentName, inline: true },
-        {
-          name: "Date",
-          value: new Date(match.beginAt).toLocaleString(),
-          inline: true,
-        }
+        { name: "Date", value: formatDateTime(match.beginAt), inline: true }
       )
       .setTimestamp();
 
@@ -517,11 +512,7 @@ async function sendDuelNotifications(
         inline: true,
       },
       { name: "Son équipe", value: team, inline: true },
-      {
-        name: "Match",
-        value: new Date(match.beginAt).toLocaleString(),
-        inline: false,
-      }
+      { name: "Match", value: formatDateTime(match.beginAt), inline: false }
     )
     .setFooter({ text: `Duel ID: ${duel.id}` })
     .setTimestamp();

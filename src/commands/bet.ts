@@ -18,6 +18,7 @@ import {
 } from "../utils/oddsCalculator";
 import { TitleManager } from "../utils/titleManager";
 import { TournamentUtils } from "../utils/tournamentUtils";
+import { formatDateTime } from "../utils/dateUtils";
 
 const activeBetSessions = new Map<string, any>();
 const tutils = new TournamentUtils(prisma);
@@ -78,13 +79,10 @@ export async function execute(interaction: any) {
         });
 
         const hasBet = userBets.length > 0;
+        const when = formatDateTime(match.beginAt);
         const description = hasBet
-          ? `${match.tournamentName} - ${new Date(
-              match.beginAt
-            ).toLocaleString()} - Pari déjà placé`
-          : `${match.tournamentName} - ${new Date(
-              match.beginAt
-            ).toLocaleString()}`;
+          ? `${match.tournamentName} - ${when} - Pari déjà placé`
+          : `${match.tournamentName} - ${when}`;
 
         return {
           label: `${match.kcTeam} vs ${match.opponent}`,
@@ -270,11 +268,7 @@ export async function handleMatchSelection(interaction: any) {
       .setDescription(description)
       .addFields(
         { name: "Tournoi", value: match.tournamentName, inline: true },
-        {
-          name: "Date",
-          value: new Date(match.beginAt).toLocaleString(),
-          inline: true,
-        },
+        { name: "Date", value: formatDateTime(match.beginAt), inline: true },
         {
           name: "Cotes Actuelles",
           value: `${match.kcTeam}: ${kcOdds}x | ${match.opponent}: ${opponentOdds}x`,
@@ -364,11 +358,7 @@ export async function handleScoreSelection(interaction: any) {
       )
       .addFields(
         { name: "Tournoi", value: match.tournamentName, inline: true },
-        {
-          name: "Date",
-          value: new Date(match.beginAt).toLocaleString(),
-          inline: true,
-        }
+        { name: "Date", value: formatDateTime(match.beginAt), inline: true }
       )
       .setTimestamp();
 
@@ -888,13 +878,10 @@ export async function handleBackToMatches(interaction: any) {
         });
 
         const hasBet = userBets.length > 0;
+        const when = formatDateTime(match.beginAt);
         const description = hasBet
-          ? `${match.tournamentName} - ${new Date(
-              match.beginAt
-            ).toLocaleString()} - Pari déjà placé`
-          : `${match.tournamentName} - ${new Date(
-              match.beginAt
-            ).toLocaleString()}`;
+          ? `${match.tournamentName} - ${when} - Pari déjà placé`
+          : `${match.tournamentName} - ${when}`;
 
         return {
           label: `${match.kcTeam} vs ${match.opponent}`,

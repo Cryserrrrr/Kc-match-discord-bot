@@ -14,6 +14,7 @@ import {
   multiplyOdds,
 } from "../utils/bettingUtils";
 import { TitleManager } from "../utils/titleManager";
+import { formatDateTime } from "../utils/dateUtils";
 
 type ParlayLeg = {
   matchId: string;
@@ -166,7 +167,7 @@ export async function handleParlayAddTeam(interaction: any) {
   const options = upcoming.map((m) => ({
     label: `${m.kcTeam} vs ${m.opponent}`,
     value: m.id,
-    description: new Date(m.beginAt).toLocaleString(),
+    description: formatDateTime(m.beginAt),
   }));
   const select = new StringSelectMenuBuilder()
     .setCustomId("parlay_team_match")
@@ -235,7 +236,7 @@ export async function handleParlayAddScore(interaction: any) {
   const options = upcoming.map((m) => ({
     label: `${m.kcTeam} vs ${m.opponent}`,
     value: m.id,
-    description: new Date(m.beginAt).toLocaleString(),
+    description: formatDateTime(m.beginAt),
   }));
   const select = new StringSelectMenuBuilder()
     .setCustomId("parlay_score_match")

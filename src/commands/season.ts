@@ -2,6 +2,7 @@ import { SlashCommandBuilder } from "@discordjs/builders";
 import { EmbedBuilder } from "discord.js";
 import { prisma } from "../index";
 import { logger } from "../utils/logger";
+import { formatDateTime } from "../utils/dateUtils";
 
 export const data = new SlashCommandBuilder()
   .setName("season")
@@ -38,14 +39,12 @@ export async function execute(interaction: any) {
         { name: "Statut", value: season.status, inline: true },
         {
           name: "Début",
-          value: season.startsAt
-            ? new Date(season.startsAt).toLocaleString()
-            : "—",
+          value: season.startsAt ? formatDateTime(season.startsAt) : "—",
           inline: true,
         },
         {
           name: "Fin",
-          value: season.endsAt ? new Date(season.endsAt).toLocaleString() : "—",
+          value: season.endsAt ? formatDateTime(season.endsAt) : "—",
           inline: true,
         },
         { name: "Participants", value: `${count}`, inline: true }

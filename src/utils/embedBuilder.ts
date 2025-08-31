@@ -1,4 +1,5 @@
 import { EmbedBuilder } from "discord.js";
+import { formatDate, formatTime } from "./dateUtils";
 
 export interface MatchData {
   kcTeam: string;
@@ -39,18 +40,10 @@ export async function createMatchEmbed(
   } else if (matchDate === tomorrowDate) {
     dateString = "Demain";
   } else {
-    dateString = matchTime.toLocaleString("fr-FR", {
-      weekday: "long",
-      month: "long",
-      day: "numeric",
-    });
+    dateString = formatDate(match.beginAt);
   }
 
-  const timeString = matchTime.toLocaleString("fr-FR", {
-    hour: "2-digit",
-    minute: "2-digit",
-    timeZone: "Europe/Paris",
-  });
+  const timeString = formatTime(match.beginAt, { withTz: true });
 
   const embedColor = getEmbedColor(match.kcId);
 
@@ -99,24 +92,12 @@ export async function createRescheduleEmbed(
   } else if (matchDate === tomorrowDate) {
     dateString = "Demain";
   } else {
-    dateString = matchTime.toLocaleString("fr-FR", {
-      weekday: "long",
-      month: "long",
-      day: "numeric",
-    });
+    dateString = formatDate(match.beginAt);
   }
 
-  const timeString = matchTime.toLocaleString("fr-FR", {
-    hour: "2-digit",
-    minute: "2-digit",
-    timeZone: "Europe/Paris",
-  });
+  const timeString = formatTime(match.beginAt, { withTz: true });
 
-  const originalTimeString = originalTime.toLocaleString("fr-FR", {
-    hour: "2-digit",
-    minute: "2-digit",
-    timeZone: "Europe/Paris",
-  });
+  const originalTimeString = formatTime(match.originalTime, { withTz: true });
 
   const embedColor = getEmbedColor(match.kcId);
 
@@ -164,18 +145,10 @@ export async function createScoreEmbed(
   } else if (matchDate === tomorrowDate) {
     dateString = "Demain";
   } else {
-    dateString = matchTime.toLocaleString("fr-FR", {
-      weekday: "long",
-      month: "long",
-      day: "numeric",
-    });
+    dateString = formatDate(match.beginAt);
   }
 
-  const timeString = matchTime.toLocaleString("fr-FR", {
-    hour: "2-digit",
-    minute: "2-digit",
-    timeZone: "Europe/Paris",
-  });
+  const timeString = formatTime(match.beginAt, { withTz: true });
 
   const embedColor = getEmbedColor(match.kcId);
 

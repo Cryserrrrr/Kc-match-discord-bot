@@ -349,13 +349,14 @@ export function formatMatchCompact(match: any) {
   }
 
   if (match.scheduled_at) {
-    const matchDate = new Date(match.scheduled_at);
-    const utcPlus2Date = new Date(matchDate.getTime() + 2 * 60 * 60 * 1000);
-    matchText += `\n📅 ${utcPlus2Date.toLocaleString("fr-FR", {
+    const dt = new Date(match.scheduled_at);
+    const formatted = new Intl.DateTimeFormat("fr-FR", {
       hour: "2-digit",
       minute: "2-digit",
       timeZone: "Europe/Paris",
-    })}`;
+      timeZoneName: "short",
+    }).format(dt);
+    matchText += `\n📅 ${formatted}`;
   }
 
   if (
