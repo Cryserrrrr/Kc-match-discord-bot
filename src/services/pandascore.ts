@@ -317,9 +317,9 @@ export class PandaScoreService {
         leagueName: match.league.name,
         leagueImage: match.league.image_url,
         serieName: match.serie.full_name,
-        tournamentName: match.tournament.name,
-        tournamentId: match.tournament.id.toString(),
-        hasBracket: match.tournament.has_bracket,
+        tournamentName: match.tournament?.name || "Tournoi Inconnu",
+        tournamentId: match.tournament?.id?.toString() || null,
+        hasBracket: match.tournament?.has_bracket || false,
         numberOfGames: match.number_of_games,
         beginAt: new Date(match.scheduled_at),
       };

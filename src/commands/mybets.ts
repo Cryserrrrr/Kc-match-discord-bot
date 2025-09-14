@@ -123,7 +123,7 @@ async function buildActiveBetsEmbed(user: any, activeBets: any[]) {
     (activeBets as any[]).forEach((bet: any, index: number) => {
       const match = bet.match;
       const matchDate = formatDate(match.beginAt);
-      const matchTime = formatTime(match.beginAt, { withTz: true });
+      const matchTime = formatTime(match.beginAt);
       const potentialWin = Math.floor(bet.amount * bet.odds);
       const isScore = (bet as any).type === "SCORE";
       const display = isScore
@@ -173,9 +173,7 @@ async function buildRecentBetsEmbed(userId: string) {
     (recentBets as any[]).forEach((bet: any, index: number) => {
       const match = bet.match;
       const matchDate = match ? formatDate(match.beginAt) : "—";
-      const matchTime = match
-        ? formatTime(match.beginAt, { withTz: true })
-        : "—";
+      const matchTime = match ? formatTime(match.beginAt) : "—";
       const isScore = bet.type === "SCORE";
       const displayTeam = isScore ? `Score ${bet.selection}` : bet.selection;
       const potentialWin = Math.floor(bet.amount * bet.odds);
@@ -220,9 +218,7 @@ async function buildDuelsEmbed(userId: string) {
     (duels as any[]).forEach((duel: any, index: number) => {
       const match = duel.match;
       const matchDate = match ? formatDate(match.beginAt) : "—";
-      const matchTime = match
-        ? formatTime(match.beginAt, { withTz: true })
-        : "—";
+      const matchTime = match ? formatTime(match.beginAt) : "—";
       const otherUserId =
         duel.challengerId === userId ? duel.opponentId : duel.challengerId;
       const yourTeam =

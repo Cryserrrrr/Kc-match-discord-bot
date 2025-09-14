@@ -145,15 +145,15 @@ async function saveMatchesToDatabase(
           kcId: kcId.toString(),
           opponent: opponentName,
           opponentImage: opponentImage,
-          tournamentName: match.tournament.name,
-          tournamentId: match.tournament_id.toString(),
+          tournamentName: match.tournament?.name || "Tournoi Inconnu",
+          tournamentId: match.tournament_id?.toString() || null,
           leagueName: match.league.name,
           serieName: match.serie.full_name,
           beginAt: new Date(match.scheduled_at),
           status: status,
           score: score,
           numberOfGames: match.number_of_games,
-          hasBracket: match.tournament.has_bracket,
+          hasBracket: match.tournament?.has_bracket || false,
         },
       });
 

@@ -15,6 +15,7 @@ import {
 } from "../utils/bettingUtils";
 import { TitleManager } from "../utils/titleManager";
 import { formatDateTime } from "../utils/dateUtils";
+import { sendParlayAnnouncement } from "../utils/betAnnouncement";
 
 type ParlayLeg = {
   matchId: string;
@@ -350,14 +351,16 @@ export async function handleParlayConfirm(interaction: any) {
     );
     activeParlaySessions.delete(userId);
     try {
-      const { TournamentUtils } = await import("../utils/tournamentUtils");
-      const tutils = new TournamentUtils(prisma);
-      await tutils.linkParlayIfEligible(
-        interaction.guildId,
-        userId,
-        parlay.id,
-        parlay.createdAt as any
-      );
+      if (interaction.guildId) {
+        const { TournamentUtils } = await import("../utils/tournamentUtils");
+        const tutils = new TournamentUtils(prisma);
+        await tutils.linkParlayIfEligible(
+          interaction.guildId,
+          userId,
+          parlay.id,
+          parlay.createdAt as any
+        );
+      }
     } catch {}
 
     const embed = new EmbedBuilder()
@@ -392,6 +395,12 @@ export async function handleParlayConfirm(interaction: any) {
       });
     }
     await interaction.update({ embeds: [embed], components: [] });
+
+    await sendParlayAnnouncement(interaction, {
+      amount: session.amount,
+      totalOdds: totalOdds,
+      legs: session.legs,
+    });
   } catch (error) {
     logger.error("Error confirming parlay:", error);
     await interaction.update({

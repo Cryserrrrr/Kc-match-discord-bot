@@ -19,9 +19,9 @@ import {
 import { TitleManager } from "../utils/titleManager";
 import { TournamentUtils } from "../utils/tournamentUtils";
 import { formatDateTime } from "../utils/dateUtils";
+import { sendBetAnnouncement } from "../utils/betAnnouncement";
 
 const activeBetSessions = new Map<string, any>();
-const tutils = new TournamentUtils(prisma);
 
 export const data = new SlashCommandBuilder()
   .setName("bet")
@@ -610,12 +610,15 @@ export async function handleScoreBetAmount(interaction: any) {
       data: { points: user.points - amount },
     });
 
-    await tutils.linkBetIfEligible(
-      interaction.guildId,
-      userId,
-      created.id,
-      created.createdAt
-    );
+    if (interaction.guildId) {
+      const tutils = new TournamentUtils(prisma);
+      await tutils.linkBetIfEligible(
+        interaction.guildId,
+        userId,
+        created.id,
+        created.createdAt
+      );
+    }
 
     const titleUnlocked = await TitleManager.unlockFirstBetTitle(
       userId,
@@ -655,6 +658,14 @@ export async function handleScoreBetAmount(interaction: any) {
     }
 
     await interaction.reply({ embeds: [embed], ephemeral: true });
+
+    await sendBetAnnouncement(interaction, {
+      type: "SCORE",
+      selection: predictedScore,
+      amount: amount,
+      odds: sessionOdds,
+      matchId: matchId,
+    });
 
     const sessionId = `${userId}_${matchId}`;
     activeBetSessions.delete(sessionId);
@@ -772,12 +783,15 @@ export async function handleBetAmount(interaction: any) {
       data: { points: user.points - amount },
     });
 
-    await tutils.linkBetIfEligible(
-      interaction.guildId,
-      userId,
-      created.id,
-      created.createdAt
-    );
+    if (interaction.guildId) {
+      const tutils = new TournamentUtils(prisma);
+      await tutils.linkBetIfEligible(
+        interaction.guildId,
+        userId,
+        created.id,
+        created.createdAt
+      );
+    }
 
     const titleUnlocked = await TitleManager.unlockFirstBetTitle(
       userId,
@@ -814,6 +828,14 @@ export async function handleBetAmount(interaction: any) {
     }
 
     await interaction.reply({ embeds: [embed], ephemeral: true });
+
+    await sendBetAnnouncement(interaction, {
+      type: "TEAM",
+      selection: team,
+      amount: amount,
+      odds: currentOdds,
+      matchId: matchId,
+    });
 
     const sessionId = `${userId}_${matchId}`;
     activeBetSessions.delete(sessionId);

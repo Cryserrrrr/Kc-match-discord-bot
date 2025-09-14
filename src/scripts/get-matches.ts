@@ -215,12 +215,12 @@ async function checkAndSaveMatches(prisma: PrismaClient) {
                   leagueName: match.league.name,
                   leagueImage: match.league.image_url,
                   serieName: match.serie.full_name,
-                  tournamentName: match.tournament.name,
+                  tournamentName: match.tournament?.name || "Tournoi Inconnu",
                   numberOfGames: match.number_of_games,
                   beginAt: new Date(match.scheduled_at),
                   status: match.status,
-                  tournamentId: match.tournament.id.toString(),
-                  hasBracket: match.tournament.has_bracket,
+                  tournamentId: match.tournament?.id?.toString() || null,
+                  hasBracket: match.tournament?.has_bracket || false,
                 },
               });
 
@@ -454,11 +454,7 @@ async function updateExistingMatchesStatus(
             }
           }
 
-          if (
-            status === "finished" &&
-            score &&
-            dbMatch.status !== "finished"
-          ) {
+          if (status === "finished" && score && dbMatch.status !== "finished") {
             try {
               const discordClient = await getDiscordClient();
               const resultProcessor = new ResultProcessor(

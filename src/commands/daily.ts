@@ -59,7 +59,7 @@ export async function execute(interaction: any) {
         data: {
           id: userId,
           username: username,
-          points: 1000000,
+          points: 1000,
         },
       });
     }
