@@ -305,7 +305,7 @@ async function sendNoMatchesAnnouncementWithNextMatch(
 
         const nextMatch = await getNextMatchForGuild(prisma, settings);
 
-        const message = "🔔 Pas de match aujourd'hui, prochain match";
+        const message = "🔔 Pas de match aujourd'hui, prochain match connu :";
 
         if (nextMatch) {
           const embed = await createMatchEmbed({
