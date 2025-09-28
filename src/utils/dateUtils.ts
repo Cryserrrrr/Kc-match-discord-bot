@@ -19,7 +19,6 @@ export function formatDateTime(
     hour: "2-digit",
     minute: "2-digit",
     timeZone,
-    timeZoneName: withTz ? "short" : undefined,
   }).format(date);
 
   return parts;
@@ -54,6 +53,5 @@ export function formatTime(
     hour: "2-digit",
     minute: "2-digit",
     timeZone,
-    timeZoneName: withTz ? "short" : undefined,
   }).format(date);
 }

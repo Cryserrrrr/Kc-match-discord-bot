@@ -39,12 +39,16 @@ export async function execute(interaction: any) {
         { name: "Statut", value: season.status, inline: true },
         {
           name: "Début",
-          value: season.startsAt ? formatDateTime(season.startsAt) : "—",
+          value: season.startsAt
+            ? formatDateTime(season.startsAt, { withTz: false })
+            : "—",
           inline: true,
         },
         {
           name: "Fin",
-          value: season.endsAt ? formatDateTime(season.endsAt) : "—",
+          value: season.endsAt
+            ? formatDateTime(season.endsAt, { withTz: false })
+            : "—",
           inline: true,
         },
         { name: "Participants", value: `${count}`, inline: true }

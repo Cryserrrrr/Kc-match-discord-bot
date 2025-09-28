@@ -43,7 +43,7 @@ export async function createMatchEmbed(
     dateString = formatDate(match.beginAt);
   }
 
-  const timeString = formatTime(match.beginAt);
+  const timeString = formatTime(match.beginAt, { withTz: false });
 
   const embedColor = getEmbedColor(match.kcId);
 
@@ -95,9 +95,9 @@ export async function createRescheduleEmbed(
     dateString = formatDate(match.beginAt);
   }
 
-  const timeString = formatTime(match.beginAt);
+  const timeString = formatTime(match.beginAt, { withTz: false });
 
-  const originalTimeString = formatTime(match.originalTime);
+  const originalTimeString = formatTime(match.originalTime, { withTz: false });
 
   const embedColor = getEmbedColor(match.kcId);
 
@@ -148,7 +148,7 @@ export async function createScoreEmbed(
     dateString = formatDate(match.beginAt);
   }
 
-  const timeString = formatTime(match.beginAt);
+  const timeString = formatTime(match.beginAt, { withTz: false });
 
   const embedColor = getEmbedColor(match.kcId);
 

@@ -168,7 +168,7 @@ export async function handleParlayAddTeam(interaction: any) {
   const options = upcoming.map((m) => ({
     label: `${m.kcTeam} vs ${m.opponent}`,
     value: m.id,
-    description: formatDateTime(m.beginAt),
+    description: formatDateTime(m.beginAt, { withTz: false }),
   }));
   const select = new StringSelectMenuBuilder()
     .setCustomId("parlay_team_match")
@@ -237,7 +237,7 @@ export async function handleParlayAddScore(interaction: any) {
   const options = upcoming.map((m) => ({
     label: `${m.kcTeam} vs ${m.opponent}`,
     value: m.id,
-    description: formatDateTime(m.beginAt),
+    description: formatDateTime(m.beginAt, { withTz: false }),
   }));
   const select = new StringSelectMenuBuilder()
     .setCustomId("parlay_score_match")

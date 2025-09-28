@@ -56,6 +56,7 @@ model GuildSettings {
   enablePreMatchNotifications Boolean   @default(true) // Enable/disable 30-minute pre-match notifications
   enableScoreNotifications    Boolean   @default(true) // Enable/disable score notifications
   enableUpdateNotifications   Boolean   @default(true) // Enable/disable bot update notifications
+  lastNoMatchMessageSent      DateTime? // Last time a "no match" message was sent
   joinedAt                    DateTime  @default(now())
   updatedAt                   DateTime? @updatedAt
 

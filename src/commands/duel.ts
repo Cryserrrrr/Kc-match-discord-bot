@@ -156,7 +156,9 @@ export async function execute(interaction: any) {
 
     const options = upcomingMatches.map((m: any) => ({
       label: `${m.kcTeam} vs ${m.opponent}`,
-      description: `${m.tournamentName} - ${formatDateTime(m.beginAt)}`,
+      description: `${m.tournamentName} - ${formatDateTime(m.beginAt, {
+        withTz: false,
+      })}`,
       value: `${m.id}_${opponent.id}`,
     }));
 
@@ -242,7 +244,11 @@ export async function handleDuelMatchSelect(interaction: any) {
       .setDescription("Choisissez votre équipe pour ce duel")
       .addFields(
         { name: "Tournoi", value: match.tournamentName, inline: true },
-        { name: "Date", value: formatDateTime(match.beginAt), inline: true }
+        {
+          name: "Date",
+          value: formatDateTime(match.beginAt, { withTz: false }),
+          inline: true,
+        }
       )
       .setTimestamp();
 
@@ -512,7 +518,11 @@ async function sendDuelNotifications(
         inline: true,
       },
       { name: "Son équipe", value: team, inline: true },
-      { name: "Match", value: formatDateTime(match.beginAt), inline: false }
+      {
+        name: "Match",
+        value: formatDateTime(match.beginAt, { withTz: false }),
+        inline: false,
+      }
     )
     .setFooter({ text: `Duel ID: ${duel.id}` })
     .setTimestamp();

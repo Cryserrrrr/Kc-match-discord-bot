@@ -357,7 +357,6 @@ export function formatMatchCompact(match: any) {
       hour: "2-digit",
       minute: "2-digit",
       timeZone: "Europe/Paris",
-      timeZoneName: "short",
     }).format(dt);
     matchText += `\n📅 ${formatted}`;
   }
