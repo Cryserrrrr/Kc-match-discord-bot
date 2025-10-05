@@ -62,12 +62,9 @@ async function hasNoMatchMessageBeenSent(
 
     if (!guildSettings?.lastNoMatchMessageSent) {
       return false;
+    } else {
+      return true;
     }
-
-    const now = new Date();
-    const oneDayAgo = new Date(now.getTime() - 24 * 60 * 60 * 1000);
-
-    return guildSettings.lastNoMatchMessageSent > oneDayAgo;
   } catch (error) {
     logger.error(
       `Error checking no-match message status for guild ${guildId}:`,
