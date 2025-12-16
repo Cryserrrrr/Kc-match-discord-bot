@@ -6,13 +6,17 @@ import {
   getPingRoles,
   isTeamAllowed,
   isScoreNotificationsEnabled,
+  isTwitchNotificationsEnabled,
 } from "./guildFilters";
 import { withRetry } from "./retryUtils";
 import {
   createMatchEmbed,
   createScoreEmbed,
   createRescheduleEmbed,
+  createStreamEmbed,
+  StreamData,
 } from "./embedBuilder";
+import { TwitchService, TwitchStream } from "../services/twitch";
 
 export const DISCORD_RATE_LIMIT_DELAY = 500;
 
@@ -629,4 +633,82 @@ export async function sendChangelogNotification(
   }
 
   return { sentCount, errorCount };
+}
+
+export async function sendTwitchStreamNotification(
+  client: Client,
+  guildSettings: GuildSettings[],
+  stream: TwitchStream,
+  playerName: string,
+  teamId: string,
+  teamName: string,
+  twitchService: TwitchService
+): Promise<void> {
+  try {
+    const eligibleGuilds = guildSettings.filter((setting) => {
+      if (!isTwitchNotificationsEnabled(setting)) {
+        return false;
+      }
+      if (!isTeamAllowed(teamId, setting)) {
+        return false;
+      }
+      return true;
+    });
+
+    if (eligibleGuilds.length === 0) {
+      logger.info(
+        `No eligible guilds for Twitch stream notification (${playerName} - ${teamName})`
+      );
+      return;
+    }
+
+    const streamData: StreamData = {
+      title: stream.title,
+      playerName: playerName,
+      teamName: teamName,
+      teamId: teamId,
+      userLogin: stream.user_login,
+      userName: stream.user_name,
+      userId: stream.user_id,
+      gameName: stream.game_name,
+      viewerCount: stream.viewer_count,
+      thumbnailUrl: stream.thumbnail_url,
+      startedAt: new Date(stream.started_at),
+    };
+
+    const embed = await createStreamEmbed(streamData, twitchService);
+
+    for (let i = 0; i < eligibleGuilds.length; i++) {
+      const setting = eligibleGuilds[i];
+      try {
+        const result = await getGuildAndChannel(
+          client,
+          setting.guildId,
+          setting.channelId
+        );
+        if (!result) continue;
+
+        const { channel } = result;
+        const message = `🔴 **${playerName} est en live sur Twitch !**`;
+
+        await sendMessageWithTimeout(channel, message, [embed]);
+
+        logger.info(
+          `Sent Twitch stream notification for ${playerName} (${teamName}) to guild ${setting.guildId}`
+        );
+
+        await addDelayIfNotLast(i, eligibleGuilds.length);
+      } catch (error) {
+        logger.error(
+          `Error sending Twitch stream notification to guild ${setting.guildId}:`,
+          error
+        );
+      }
+    }
+  } catch (error) {
+    logger.error(
+      `Error sending Twitch stream notification for ${playerName}:`,
+      error
+    );
+  }
 }

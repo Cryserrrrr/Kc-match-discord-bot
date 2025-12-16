@@ -895,3 +895,90 @@ export async function handleUpdateToggle(
     `Guild ${guildId} ${enabled ? "enabled" : "disabled"} update notifications`
   );
 }
+
+export async function showTwitchConfig(interaction: any, guildSettings: any) {
+  const twitchEnabled =
+    (guildSettings as any)?.enableTwitchNotifications !== false;
+
+  const embed = new EmbedBuilder()
+    .setTitle("🔴 Configuration des Notifications de Stream Twitch")
+    .setDescription(
+      "Les notifications de stream Twitch sont envoyées lorsqu'un joueur de Karmine Corp commence à streamer.\n\n" +
+        "**État actuel :** " +
+        (twitchEnabled ? "✅ Activé" : "❌ Désactivé")
+    )
+    .setColor(twitchEnabled ? 0x00ff00 : 0xff0000);
+
+  const enableButton = new ButtonBuilder()
+    .setCustomId("twitch_enable")
+    .setLabel("✅ Activer")
+    .setStyle(ButtonStyle.Success)
+    .setDisabled(twitchEnabled);
+
+  const disableButton = new ButtonBuilder()
+    .setCustomId("twitch_disable")
+    .setLabel("❌ Désactiver")
+    .setStyle(ButtonStyle.Danger)
+    .setDisabled(!twitchEnabled);
+
+  await safeInteractionUpdate(interaction, {
+    embeds: [embed],
+    components: [
+      createActionRow([enableButton, disableButton, createBackButton()]),
+    ],
+  });
+}
+
+export async function handleTwitchToggle(
+  interaction: any,
+  guildId: string,
+  enabled: boolean
+) {
+  try {
+    await interaction.deferUpdate();
+  } catch (error: any) {
+    if (
+      error.code === 10062 ||
+      error.message?.includes("Unknown interaction")
+    ) {
+      logger.warn("Interaction expired during twitch toggle, skipping");
+      return;
+    }
+    logger.error("Error deferring twitch toggle update:", error);
+    return;
+  }
+
+  await prisma.guildSettings.update({
+    where: { guildId },
+    data: { enableTwitchNotifications: enabled },
+  });
+
+  const embed = new EmbedBuilder()
+    .setColor(enabled ? "#00ff00" : "#ff0000")
+    .setTitle("🔴 Configuration des notifications de stream Twitch")
+    .setDescription(
+      enabled
+        ? "✅ Les notifications de stream Twitch sont maintenant **activées**"
+        : "❌ Les notifications de stream Twitch sont maintenant **désactivées**"
+    )
+    .addFields({
+      name: "📋 Détails",
+      value: enabled
+        ? "• Les notifications seront envoyées lorsqu'un joueur de Karmine Corp commence à streamer sur Twitch"
+        : "• Aucune notification de stream Twitch ne sera envoyée\n• Les autres notifications restent actives",
+    })
+    .setTimestamp()
+    .setFooter({
+      text: `Configuré par ${interaction.user.tag}`,
+      iconURL: interaction.user.displayAvatarURL(),
+    });
+
+  await safeInteractionUpdate(interaction, {
+    embeds: [embed],
+    components: [createActionRow([createBackButton()])],
+  });
+
+  logger.info(
+    `Guild ${guildId} ${enabled ? "enabled" : "disabled"} twitch notifications`
+  );
+}

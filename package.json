@@ -14,7 +14,9 @@
     "update-guild-stats": "ts-node src/scripts/update-guild-stats.ts",
     "send-changelog": "ts-node src/scripts/send-changelog.ts",
     "get-pastmatches": "ts-node src/scripts/get-pastmatches.ts",
-    "seed-titles": "ts-node src/scripts/seed-titles.ts"
+    "seed-titles": "ts-node src/scripts/seed-titles.ts",
+    "check-twitch-streams": "ts-node src/scripts/check-twitch-streams.ts",
+    "seed-twitch-players": "ts-node src/scripts/seed-twitch-players.ts"
   },
   "keywords": [
     "discord",

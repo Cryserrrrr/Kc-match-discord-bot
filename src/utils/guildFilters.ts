@@ -8,6 +8,7 @@ export interface GuildSettings {
   enablePreMatchNotifications?: boolean;
   enableScoreNotifications?: boolean;
   enableUpdateNotifications?: boolean;
+  enableTwitchNotifications?: boolean;
 }
 
 export function isTeamAllowed(
@@ -81,4 +82,10 @@ export function hasValidConfiguration(
   guildSettings: GuildSettings | null
 ): boolean {
   return !!(guildSettings && guildSettings.channelId);
+}
+
+export function isTwitchNotificationsEnabled(
+  guildSettings: GuildSettings | null
+): boolean {
+  return guildSettings?.enableTwitchNotifications !== false;
 }

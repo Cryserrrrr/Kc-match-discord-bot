@@ -195,6 +195,55 @@ export async function createScoreEmbed(
   return embed;
 }
 
+export interface StreamData {
+  title: string;
+  playerName: string;
+  teamName: string;
+  teamId: string;
+  userLogin: string;
+  userName: string;
+  userId: string;
+  gameName: string;
+  viewerCount: number;
+  thumbnailUrl: string;
+  startedAt: Date;
+}
+
+export async function createStreamEmbed(
+  stream: StreamData,
+  twitchService: any
+): Promise<EmbedBuilder> {
+  const thumbnailUrl = twitchService.getStreamThumbnailUrl(
+    stream.thumbnailUrl
+  );
+  const streamUrl = `https://www.twitch.tv/${stream.userLogin}`;
+
+  const cleanedTitle = stream.title.replace(/\t/g, " ").replace(/\s+/g, " ").trim();
+
+  const embed = new EmbedBuilder()
+    .setColor(0x9146ff)
+    .setTitle(cleanedTitle)
+    .setURL(streamUrl)
+    .setAuthor({
+      name: stream.playerName,
+      iconURL: `https://static-cdn.jtvnw.net/jtv_user_pictures/${stream.userId}-profile_image-70x70.png`,
+      url: streamUrl,
+    })
+    .setDescription(`**${stream.teamName}**`)
+    .addFields([
+      {
+        name: "Jeu",
+        value: stream.gameName || "Aucun jeu",
+        inline: true,
+      },
+    ])
+    .setImage(thumbnailUrl)
+    .setTimestamp(stream.startedAt)
+    .setFooter({ text: "Twitch" });
+
+  return embed;
+}
+
 function getEmbedColor(kcId: string): number {
   if (kcId === "134078" || kcId === "128268" || kcId === "136080") {
     return 0x1e90ff;
@@ -208,5 +257,5 @@ function getEmbedColor(kcId: string): number {
     return 0xffa500;
   }
 
-  return 0x00ff00;
+  return 0x9146ff;
 }

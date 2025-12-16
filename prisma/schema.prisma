@@ -56,6 +56,7 @@ model GuildSettings {
   enablePreMatchNotifications Boolean   @default(true) // Enable/disable 30-minute pre-match notifications
   enableScoreNotifications    Boolean   @default(true) // Enable/disable score notifications
   enableUpdateNotifications   Boolean   @default(true) // Enable/disable bot update notifications
+  enableTwitchNotifications   Boolean   @default(true) // Enable/disable Twitch stream notifications
   lastNoMatchMessageSent      DateTime? // Last time a "no match" message was sent
   joinedAt                    DateTime  @default(now())
   updatedAt                   DateTime? @updatedAt
@@ -441,4 +442,36 @@ model TournamentDuel {
   duel       Duel       @relation(fields: [duelId], references: [id], onDelete: Cascade)
 
   @@map("tournament_duels")
+}
+
+model TwitchPlayer {
+  id          String   @id @default(cuid())
+  twitchLogin String   @unique
+  twitchUserId String?
+  playerName  String
+  teamId      String
+  teamName    String
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@map("twitch_players")
+}
+
+model TwitchStream {
+  id           String   @id
+  userId       String   @unique
+  userLogin    String
+  userName     String
+  gameId       String
+  gameName     String
+  title        String
+  viewerCount  Int
+  startedAt    DateTime
+  thumbnailUrl String
+  notifiedAt   DateTime @default(now())
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@map("twitch_streams")
 }

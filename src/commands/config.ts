@@ -28,6 +28,8 @@ import {
   handleScoreToggle,
   showUpdateConfig,
   handleUpdateToggle,
+  showTwitchConfig,
+  handleTwitchToggle,
 } from "../handlers/configHandlers";
 import { StatsManager } from "../utils/statsManager";
 
@@ -68,6 +70,10 @@ function createMainEmbed(guildSettings: any): EmbedBuilder {
       (guildSettings as any)?.enableUpdateNotifications !== false
         ? "✅ Activé"
         : "❌ Désactivé";
+    const twitchEnabled =
+      (guildSettings as any)?.enableTwitchNotifications !== false
+        ? "✅ Activé"
+        : "❌ Désactivé";
     const filteredTeams = (guildSettings as any).filteredTeams || [];
     const teamsStatus =
       filteredTeams.length === 0
@@ -87,6 +93,11 @@ function createMainEmbed(guildSettings: any): EmbedBuilder {
       {
         name: "📢 Notifications de mise à jour",
         value: updateEnabled,
+        inline: true,
+      },
+      {
+        name: "🔴 Notifications de stream Twitch",
+        value: twitchEnabled,
         inline: true,
       }
     );
@@ -140,7 +151,14 @@ function createMainMenu(): StringSelectMenuBuilder {
           "Activer/désactiver les notifications de mise à jour du bot"
         )
         .setValue("update")
-        .setEmoji("📢")
+        .setEmoji("📢"),
+      new StringSelectMenuOptionBuilder()
+        .setLabel("Notifications de stream Twitch")
+        .setDescription(
+          "Activer/désactiver les notifications de stream Twitch des joueurs"
+        )
+        .setValue("twitch")
+        .setEmoji("🔴")
     );
 }
 
@@ -223,6 +241,10 @@ export async function execute(interaction: CommandInteraction) {
           await handleUpdateToggle(i, guildId, true);
         } else if (customId === "update_disable") {
           await handleUpdateToggle(i, guildId, false);
+        } else if (customId === "twitch_enable") {
+          await handleTwitchToggle(i, guildId, true);
+        } else if (customId === "twitch_disable") {
+          await handleTwitchToggle(i, guildId, false);
         }
       } catch (error: any) {
         if (
@@ -330,6 +352,9 @@ async function handleMainMenuSelection(
       break;
     case "update":
       await showUpdateConfig(interaction, guildSettings);
+      break;
+    case "twitch":
+      await showTwitchConfig(interaction, guildSettings);
       break;
   }
 }
