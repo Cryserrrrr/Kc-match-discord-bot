@@ -30,29 +30,38 @@ export class ClientManager {
     }
 
     if (!this.isDiscordReady) {
-      await withRetry(
-        async () => {
-          try {
-            await this.discordInstance!.login(process.env.DISCORD_TOKEN);
-            this.isDiscordReady = true;
-            logger.info(`Logged in as ${this.discordInstance!.user?.tag}`);
-          } catch (error: any) {
-            if (
-              error.message?.includes("sessions remaining") ||
-              error.message?.includes("rate limit") ||
-              error.message?.includes("resets at")
-            ) {
-              logger.warn(
-                "Discord session rate limit reached. Please wait before retrying."
-              );
-              throw error;
-            }
-            logger.error("Failed to login to Discord:", error);
-            throw error;
-          }
-        },
-        { maxRetries: 3, initialDelay: 5000 }
-      );
+      try {
+        await this.discordInstance!.login(process.env.DISCORD_TOKEN);
+        this.isDiscordReady = true;
+        logger.info(`Logged in as ${this.discordInstance!.user?.tag}`);
+      } catch (error: any) {
+        if (
+          error.message?.includes("sessions remaining") ||
+          error.message?.includes("rate limit") ||
+          error.message?.includes("resets at")
+        ) {
+          const resetMatch = error.message?.match(/resets at ([^)]+)/);
+          const resetTime = resetMatch ? new Date(resetMatch[1]) : null;
+          const waitTime = resetTime
+            ? Math.max(0, resetTime.getTime() - Date.now() + 5000)
+            : 60000;
+
+          logger.warn(
+            `Discord session rate limit reached. Resets at ${resetTime || "unknown"}. Waiting ${Math.ceil(waitTime / 1000)}s before retrying.`
+          );
+
+          this.discordInstance = null;
+          this.isDiscordReady = false;
+
+          throw new Error(
+            `Discord rate limit: ${error.message}. Wait until ${resetTime || "later"} before retrying.`
+          );
+        }
+        logger.error("Failed to login to Discord:", error);
+        this.discordInstance = null;
+        this.isDiscordReady = false;
+        throw error;
+      }
     }
 
     return this.discordInstance;

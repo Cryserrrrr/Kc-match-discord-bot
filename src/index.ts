@@ -219,10 +219,28 @@ process.on("SIGINT", handleShutdown);
 process.on("SIGTERM", handleShutdown);
 process.on("uncaughtException", (error) => {
   logger.error("Uncaught Exception:", error);
+  if (
+    error.message?.includes("sessions remaining") ||
+    error.message?.includes("rate limit")
+  ) {
+    logger.warn(
+      "Discord rate limit error caught. Bot will continue running but some features may be unavailable."
+    );
+    return;
+  }
   process.exit(1);
 });
-process.on("unhandledRejection", (reason, promise) => {
+process.on("unhandledRejection", (reason: any, promise) => {
   logger.error("Unhandled Rejection at:", promise, "reason:", reason);
+  if (
+    reason?.message?.includes("sessions remaining") ||
+    reason?.message?.includes("rate limit")
+  ) {
+    logger.warn(
+      "Discord rate limit error caught. Bot will continue running but some features may be unavailable."
+    );
+    return;
+  }
   process.exit(1);
 });
 

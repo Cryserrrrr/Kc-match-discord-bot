@@ -55,8 +55,32 @@ async function deployCommands() {
 
     logger.info("✅ Successfully deployed commands globally.");
   } catch (error) {
+    const errorMessage = error?.message || String(error);
+    if (
+      errorMessage.includes("sessions remaining") ||
+      errorMessage.includes("rate limit")
+    ) {
+      logger.warn(
+        "Discord rate limit reached during command deployment. Commands may not be updated, but bot will continue."
+      );
+      return;
+    }
     logger.error("Error deploying commands:", error);
+    logger.warn("Bot will continue despite command deployment error.");
   }
 }
 
-deployCommands();
+deployCommands().catch((error) => {
+  const errorMessage = error?.message || String(error);
+  if (
+    errorMessage.includes("sessions remaining") ||
+    errorMessage.includes("rate limit")
+  ) {
+    logger.warn(
+      "Discord rate limit reached during command deployment. Bot will continue."
+    );
+  } else {
+    logger.error("Fatal error in deploy commands:", error);
+    logger.warn("Bot will continue despite command deployment error.");
+  }
+});
