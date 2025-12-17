@@ -30,16 +30,29 @@ export class ClientManager {
     }
 
     if (!this.isDiscordReady) {
-      await withRetry(async () => {
-        try {
-          await this.discordInstance!.login(process.env.DISCORD_TOKEN);
-          this.isDiscordReady = true;
-          logger.info(`Logged in as ${this.discordInstance!.user?.tag}`);
-        } catch (error) {
-          logger.error("Failed to login to Discord:", error);
-          throw error;
-        }
-      });
+      await withRetry(
+        async () => {
+          try {
+            await this.discordInstance!.login(process.env.DISCORD_TOKEN);
+            this.isDiscordReady = true;
+            logger.info(`Logged in as ${this.discordInstance!.user?.tag}`);
+          } catch (error: any) {
+            if (
+              error.message?.includes("sessions remaining") ||
+              error.message?.includes("rate limit") ||
+              error.message?.includes("resets at")
+            ) {
+              logger.warn(
+                "Discord session rate limit reached. Please wait before retrying."
+              );
+              throw error;
+            }
+            logger.error("Failed to login to Discord:", error);
+            throw error;
+          }
+        },
+        { maxRetries: 3, initialDelay: 5000 }
+      );
     }
 
     return this.discordInstance;
