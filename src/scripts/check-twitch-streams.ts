@@ -11,11 +11,10 @@ import { ClientManager } from "../utils/clientManager";
 config();
 
 async function main() {
-  let prisma: PrismaClient | null = null;
   let client: Client | null = null;
 
   try {
-    prisma = ClientManager.getPrismaClient();
+    const prisma = ClientManager.getPrismaClient();
 
     const twitchService = new TwitchService();
 
@@ -278,12 +277,11 @@ async function main() {
         logger.warn("Error during cleanup:", cleanupError);
       }
     } else {
-      if (prisma) {
-        try {
-          await prisma.$disconnect();
-        } catch (cleanupError) {
-          logger.warn("Error disconnecting Prisma:", cleanupError);
-        }
+      try {
+        const prisma = ClientManager.getPrismaClient();
+        await prisma.$disconnect();
+      } catch (cleanupError) {
+        logger.warn("Error disconnecting Prisma:", cleanupError);
       }
     }
     process.exit(0);
