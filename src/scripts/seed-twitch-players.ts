@@ -149,12 +149,6 @@ const PLAYERS: PlayerData[] = [
     teamId: TEAM_IDS.RL.KC,
     teamName: TEAM_NAMES[TEAM_IDS.RL.KC as keyof typeof TEAM_NAMES],
   },
-  {
-    twitchLogin: "traytonlol",
-    playerName: "trayton",
-    teamId: TEAM_IDS.LOL.KCBS,
-    teamName: TEAM_NAMES[TEAM_IDS.LOL.KCBS as keyof typeof TEAM_NAMES],
-  },
 ];
 
 async function main() {
