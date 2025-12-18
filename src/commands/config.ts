@@ -14,9 +14,14 @@ import {
   showChannelConfig,
   handleChannelSelection,
   showRolesConfig,
-  handleRoleSelection,
-  handleRolesConfirmation,
-  handleRolesClear,
+  showMatchRoleConfig,
+  handleMatchRoleSelection,
+  showTwitchRoleConfig,
+  handleTwitchRoleSelection,
+  showTeamRolesConfig,
+  showTeamRoleSelection,
+  handleTeamRoleAssignment,
+  handleClearTeamRoles,
   showTeamsConfig,
   handleTeamSelection,
   handleTeamsConfirmation,
@@ -33,7 +38,6 @@ import {
 } from "../handlers/configHandlers";
 import { StatsManager } from "../utils/statsManager";
 
-// Variables globales
 const activeConfigSessions = new Map<string, any>();
 
 export const data = new SlashCommandBuilder()
@@ -54,27 +58,41 @@ function createMainEmbed(guildSettings: any): EmbedBuilder {
     const channelMention = guildSettings.channelId
       ? `<#${guildSettings.channelId}>`
       : "Non configuré";
-    const pingRoles = (guildSettings as any).pingRoles || [];
-    const pingRolesStatus =
-      pingRoles.length === 0
-        ? "Aucun rôle"
-        : `${pingRoles.length} rôle(s) sélectionné(s)`;
-    const prematchEnabled = (guildSettings as any).enablePreMatchNotifications
+
+    const matchRole = guildSettings.matchAnnouncementRole;
+    const twitchRole = guildSettings.twitchLiveRole;
+    const teamRoles = (guildSettings.teamRoles as Record<string, string>) || {};
+    const teamRolesCount = Object.keys(teamRoles).filter(
+      (k) => teamRoles[k]
+    ).length;
+
+    let rolesStatus = "";
+    if (matchRole || twitchRole || teamRolesCount > 0) {
+      const parts = [];
+      if (matchRole) parts.push("Match");
+      if (twitchRole) parts.push("Twitch");
+      if (teamRolesCount > 0) parts.push(`${teamRolesCount} équipe(s)`);
+      rolesStatus = parts.join(", ");
+    } else {
+      rolesStatus = "Non configuré";
+    }
+
+    const prematchEnabled = guildSettings.enablePreMatchNotifications
       ? "✅ Activé"
       : "❌ Désactivé";
     const scoreEnabled =
-      (guildSettings as any).enableScoreNotifications === true
+      guildSettings.enableScoreNotifications === true
         ? "✅ Activé"
         : "❌ Désactivé";
     const updateEnabled =
-      (guildSettings as any)?.enableUpdateNotifications !== false
+      guildSettings.enableUpdateNotifications !== false
         ? "✅ Activé"
         : "❌ Désactivé";
     const twitchEnabled =
-      (guildSettings as any)?.enableTwitchNotifications !== false
+      guildSettings.enableTwitchNotifications !== false
         ? "✅ Activé"
         : "❌ Désactivé";
-    const filteredTeams = (guildSettings as any).filteredTeams || [];
+    const filteredTeams = guildSettings.filteredTeams || [];
     const teamsStatus =
       filteredTeams.length === 0
         ? "Toutes les équipes"
@@ -82,7 +100,7 @@ function createMainEmbed(guildSettings: any): EmbedBuilder {
 
     embed.addFields(
       { name: "📺 Canal d'annonce", value: channelMention, inline: true },
-      { name: "👥 Rôles à mentionner", value: pingRolesStatus, inline: true },
+      { name: "👥 Rôles à mentionner", value: rolesStatus, inline: true },
       { name: "🏆 Filtre d'équipes", value: teamsStatus, inline: true },
       {
         name: "🔔 Notifications avant-match",
@@ -96,7 +114,7 @@ function createMainEmbed(guildSettings: any): EmbedBuilder {
         inline: true,
       },
       {
-        name: "🔴 Notifications de stream Twitch",
+        name: "🔴 Notifications Twitch",
         value: twitchEnabled,
         inline: true,
       }
@@ -125,7 +143,7 @@ function createMainMenu(): StringSelectMenuBuilder {
         .setEmoji("📺"),
       new StringSelectMenuOptionBuilder()
         .setLabel("Rôles à mentionner")
-        .setDescription("Sélectionner les rôles à mentionner")
+        .setDescription("Configurer les rôles par type de notification")
         .setValue("roles")
         .setEmoji("👥"),
       new StringSelectMenuOptionBuilder()
@@ -153,9 +171,9 @@ function createMainMenu(): StringSelectMenuBuilder {
         .setValue("update")
         .setEmoji("📢"),
       new StringSelectMenuOptionBuilder()
-        .setLabel("Notifications de stream Twitch")
+        .setLabel("Notifications Twitch")
         .setDescription(
-          "Activer/désactiver les notifications de stream Twitch des joueurs"
+          "Activer/désactiver les notifications de stream Twitch"
         )
         .setValue("twitch")
         .setEmoji("🔴")
@@ -198,7 +216,7 @@ export async function execute(interaction: CommandInteraction) {
     });
 
     const collector = interaction.channel!.createMessageComponentCollector({
-      time: 60000,
+      time: 120000,
       filter: (i) => i.user.id === interaction.user.id,
     });
 
@@ -207,14 +225,38 @@ export async function execute(interaction: CommandInteraction) {
     collector.on("collect", async (i: ButtonInteraction | any) => {
       try {
         const customId = i.customId;
+        const currentGuildSettings = await prisma.guildSettings.findUnique({
+          where: { guildId },
+        });
 
         if (customId === "main_menu") {
           const selectedValue = i.values[0];
-          await handleMainMenuSelection(i, selectedValue, guildSettings);
+          await handleMainMenuSelection(i, selectedValue, currentGuildSettings);
         } else if (customId === "channel_select") {
           await handleChannelSelection(i, guildId);
         } else if (customId === "back_to_main") {
           await showMainMenu(i, guildId);
+        } else if (customId === "roles_submenu") {
+          const selectedValue = i.values[0];
+          await handleRolesSubmenuSelection(i, selectedValue, currentGuildSettings);
+        } else if (customId === "back_to_roles_menu") {
+          await showRolesConfig(i, currentGuildSettings);
+        } else if (customId === "match_role_select") {
+          await handleMatchRoleSelection(i, guildId);
+        } else if (customId === "twitch_role_select") {
+          await handleTwitchRoleSelection(i, guildId);
+        } else if (customId === "team_role_select_team") {
+          const teamId = i.values[0].replace("team_", "");
+          await showTeamRoleSelection(i, teamId, currentGuildSettings);
+        } else if (customId === "team_role_assign") {
+          await handleTeamRoleAssignment(i, guildId);
+        } else if (customId === "back_to_team_roles") {
+          const updatedSettings = await prisma.guildSettings.findUnique({
+            where: { guildId },
+          });
+          await showTeamRolesConfig(i, updatedSettings);
+        } else if (customId === "clear_team_roles") {
+          await handleClearTeamRoles(i, guildId);
         } else if (customId.startsWith("team_")) {
           await handleTeamSelection(i, guildId);
         } else if (customId === "confirm_teams") {
@@ -223,12 +265,6 @@ export async function execute(interaction: CommandInteraction) {
           await handleTeamsClear(i, guildId);
         } else if (customId === "select_all_teams") {
           await handleTeamsSelectAll(i, guildId);
-        } else if (customId.startsWith("role_")) {
-          await handleRoleSelection(i, guildId);
-        } else if (customId === "confirm_roles") {
-          await handleRolesConfirmation(i, guildId);
-        } else if (customId === "clear_roles") {
-          await handleRolesClear(i, guildId);
         } else if (customId === "prematch_enable") {
           await handlePrematchToggle(i, guildId, true);
         } else if (customId === "prematch_disable") {
@@ -251,17 +287,14 @@ export async function execute(interaction: CommandInteraction) {
           error.code === 10062 ||
           error.message?.includes("Unknown interaction")
         ) {
-          logger.warn("Interaction expired in collector, skipping");
           return;
         }
-
         logger.error("Error handling interaction in collector:", error);
       }
     });
 
     collector.on("end", async () => {
       activeConfigSessions.delete(userId);
-
       try {
         await interaction.editReply({
           embeds: [
@@ -275,25 +308,14 @@ export async function execute(interaction: CommandInteraction) {
           ],
           components: [],
         });
-      } catch (error) {
-        logger.warn("Could not update expired config message:", error);
-      }
+      } catch { }
     });
 
-    collector.on("error", async (error) => {
-      logger.error(
-        "Error in config collector for user:",
-        interaction.user.id,
-        error
-      );
+    collector.on("error", async () => {
       activeConfigSessions.delete(userId);
     });
 
     collector.on("dispose", async () => {
-      logger.info(
-        "Config menu collector disposed for user:",
-        interaction.user.id
-      );
       activeConfigSessions.delete(userId);
     });
   } catch (error) {
@@ -324,9 +346,7 @@ export async function execute(interaction: CommandInteraction) {
       startTime,
       success: true,
     });
-  } catch (statsError) {
-    logger.error("Error recording config command stats:", statsError);
-  }
+  } catch { }
 }
 
 async function handleMainMenuSelection(
@@ -359,6 +379,24 @@ async function handleMainMenuSelection(
   }
 }
 
+async function handleRolesSubmenuSelection(
+  interaction: any,
+  selectedValue: string,
+  guildSettings: any
+) {
+  switch (selectedValue) {
+    case "match_role":
+      await showMatchRoleConfig(interaction, guildSettings);
+      break;
+    case "twitch_role":
+      await showTwitchRoleConfig(interaction, guildSettings);
+      break;
+    case "team_roles":
+      await showTeamRolesConfig(interaction, guildSettings);
+      break;
+  }
+}
+
 async function showMainMenu(interaction: any, guildId: string) {
   const guildSettings = await prisma.guildSettings.findUnique({
     where: { guildId },
@@ -387,7 +425,6 @@ setInterval(() => {
   for (const [userId, session] of activeConfigSessions.entries()) {
     if (session.collector.ended) {
       activeConfigSessions.delete(userId);
-      logger.info(`Cleaned up expired config session for user: ${userId}`);
     }
   }
 }, 5 * 60 * 1000);

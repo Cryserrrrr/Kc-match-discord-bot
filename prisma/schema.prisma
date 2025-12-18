@@ -48,20 +48,22 @@ model StandingCache {
 
 model GuildSettings {
   guildId                     String    @id
-  name                        String? // Discord server name
-  memberCount                 Int       @default(0) // Number of members
-  channelId                   String // Discord channel ID
-  pingRoles                   String[]  @default([]) // Array of role IDs to ping
-  filteredTeams               String[]  @default([]) // Array of team IDs to filter matches
-  enablePreMatchNotifications Boolean   @default(true) // Enable/disable 30-minute pre-match notifications
-  enableScoreNotifications    Boolean   @default(true) // Enable/disable score notifications
-  enableUpdateNotifications   Boolean   @default(true) // Enable/disable bot update notifications
-  enableTwitchNotifications   Boolean   @default(true) // Enable/disable Twitch stream notifications
-  lastNoMatchMessageSent      DateTime? // Last time a "no match" message was sent
+  name                        String?
+  memberCount                 Int       @default(0)
+  channelId                   String
+  pingRoles                   String[]  @default([])
+  matchAnnouncementRole       String?
+  twitchLiveRole              String?
+  teamRoles                   Json      @default("{}")
+  filteredTeams               String[]  @default([])
+  enablePreMatchNotifications Boolean   @default(true)
+  enableScoreNotifications    Boolean   @default(true)
+  enableUpdateNotifications   Boolean   @default(true)
+  enableTwitchNotifications   Boolean   @default(true)
+  lastNoMatchMessageSent      DateTime?
   joinedAt                    DateTime  @default(now())
   updatedAt                   DateTime? @updatedAt
 
-  // Relations
   commandStats       CommandStat[]
   tickets            Ticket[]
   performanceMetrics PerformanceMetric[]

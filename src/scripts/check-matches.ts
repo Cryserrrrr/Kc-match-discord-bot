@@ -349,11 +349,10 @@ async function sendDailyMatchAnnouncementWithReset(
   guildSettings: any[],
   matches: any[]
 ): Promise<boolean> {
+  const { getMatchRolesToPing } = await import("../utils/guildFilters");
+
   try {
     if (guildSettings.length === 0) {
-      logger.info(
-        "⚠️  No guild settings found - no channels configured for announcements"
-      );
       return false;
     }
 
@@ -364,7 +363,6 @@ async function sendDailyMatchAnnouncementWithReset(
       try {
         const guild = client.guilds.cache.get(settings.guildId);
         if (!guild) {
-          logger.warn(`Guild ${settings.guildId} not found`);
           continue;
         }
 
@@ -372,34 +370,37 @@ async function sendDailyMatchAnnouncementWithReset(
           settings.channelId
         ) as TextChannel;
         if (!channel) {
-          logger.warn(`Channel not found in guild ${settings.guildId}`);
           continue;
         }
 
         let filteredMatches = matches;
 
-        if (
-          (settings as any).filteredTeams &&
-          (settings as any).filteredTeams.length > 0
-        ) {
+        if (settings.filteredTeams && settings.filteredTeams.length > 0) {
           filteredMatches = matches.filter((match) =>
-            (settings as any).filteredTeams.includes(match.kcId)
+            settings.filteredTeams.includes(match.kcId)
           );
         }
 
         if (filteredMatches.length === 0) {
-          logger.info(
-            `⏭️  No matches to announce for guild ${guild.name} (filtered)`
-          );
           continue;
         }
 
         await clearNoMatchMessageFlag(prisma, settings.guildId);
 
-        const pingRoles = (settings as any).pingRoles || [];
-        const roleMentions = formatRoleMentions(pingRoles);
+        const allTeamIds = [...new Set(filteredMatches.map((m) => m.kcId))];
+        const allRoles: string[] = [];
+        for (const teamId of allTeamIds) {
+          const roles = getMatchRolesToPing(teamId, settings);
+          for (const role of roles) {
+            if (!allRoles.includes(role)) {
+              allRoles.push(role);
+            }
+          }
+        }
+
+        const roleMentions = formatRoleMentions(allRoles);
         const pingMessage =
-          pingRoles.length > 0
+          allRoles.length > 0
             ? `${roleMentions} Match(s) des prochaines 24h !`
             : "Match(s) des prochaines 24h !";
 
@@ -426,13 +427,10 @@ async function sendDailyMatchAnnouncementWithReset(
               await new Promise((resolve) => setTimeout(resolve, 1000));
             }
           } catch (matchError) {
-            logger.error(`❌ Error sending match ${match.id}:`, matchError);
+            logger.error(`Error sending match ${match.id}:`, matchError);
           }
         }
 
-        logger.info(
-          `✅ Successfully announced ${filteredMatches.length} matches in guild ${guild.name}`
-        );
         hasSuccessfulAnnouncements = true;
 
         if (i < guildSettings.length - 1) {
@@ -440,7 +438,7 @@ async function sendDailyMatchAnnouncementWithReset(
         }
       } catch (error) {
         logger.error(
-          `❌ Failed to announce matches in guild ${settings.guildId}:`,
+          `Failed to announce matches in guild ${settings.guildId}:`,
           error
         );
       }
@@ -448,9 +446,10 @@ async function sendDailyMatchAnnouncementWithReset(
 
     return hasSuccessfulAnnouncements;
   } catch (error) {
-    logger.error("❌ Error announcing matches:", error);
+    logger.error("Error announcing matches:", error);
     throw error;
   }
 }
 
 main();
+

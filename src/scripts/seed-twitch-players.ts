@@ -149,6 +149,12 @@ const PLAYERS: PlayerData[] = [
     teamId: TEAM_IDS.RL.KC,
     teamName: TEAM_NAMES[TEAM_IDS.RL.KC as keyof typeof TEAM_NAMES],
   },
+  {
+    twitchLogin: "traytonlol",
+    playerName: "trayton",
+    teamId: TEAM_IDS.LOL.KCBS,
+    teamName: TEAM_NAMES[TEAM_IDS.LOL.KCBS as keyof typeof TEAM_NAMES],
+  },
 ];
 
 async function main() {
@@ -156,6 +162,8 @@ async function main() {
 
   try {
     logger.info("Seeding Twitch players...");
+
+    const twitchLoginsInScript = PLAYERS.map((p) => p.twitchLogin);
 
     for (const player of PLAYERS) {
       const existing = await prisma.twitchPlayer.findUnique({
@@ -185,6 +193,18 @@ async function main() {
         });
         logger.info(`Created player: ${player.playerName} (${player.teamName})`);
       }
+    }
+
+    const deletedPlayers = await prisma.twitchPlayer.deleteMany({
+      where: {
+        twitchLogin: {
+          notIn: twitchLoginsInScript,
+        },
+      },
+    });
+
+    if (deletedPlayers.count > 0) {
+      logger.info(`Deleted ${deletedPlayers.count} players not in the script`);
     }
 
     logger.info(`Successfully seeded ${PLAYERS.length} Twitch players`);

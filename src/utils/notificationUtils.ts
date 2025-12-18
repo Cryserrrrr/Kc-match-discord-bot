@@ -1,12 +1,13 @@
-import { Client, TextChannel, ChannelType } from "discord.js";
+import { Client, TextChannel } from "discord.js";
 import { logger } from "./logger";
 import { formatRoleMentions } from "./roleMentions";
 import {
   GuildSettings,
-  getPingRoles,
   isTeamAllowed,
   isScoreNotificationsEnabled,
   isTwitchNotificationsEnabled,
+  getMatchRolesToPing,
+  getTwitchRolesToPing,
 } from "./guildFilters";
 import { withRetry } from "./retryUtils";
 import {
@@ -48,23 +49,17 @@ async function getGuildAndChannel(
 ) {
   const guild = client.guilds.cache.get(guildId);
   if (!guild) {
-    logger.warn(`Guild ${guildId} not found`);
     return null;
   }
-
   try {
     await guild.fetch();
-  } catch (error) {
-    logger.warn(`Failed to fetch guild ${guildId}:`, error);
+  } catch {
     return null;
   }
-
   const channel = guild.channels.cache.get(channelId) as TextChannel;
   if (!channel) {
-    logger.warn(`Channel not found in guild ${guildId}`);
     return null;
   }
-
   return { guild, channel };
 }
 
@@ -111,17 +106,14 @@ function filterEligibleGuilds(
     ) {
       return false;
     }
-
     if (setting.filteredTeams && setting.filteredTeams.length > 0) {
       if (!setting.filteredTeams.includes(match.kcId)) {
         return false;
       }
     }
-
     if (notificationType === "score" && !isTeamAllowed(match.kcId, setting)) {
       return false;
     }
-
     return true;
   });
 }
@@ -138,10 +130,8 @@ export async function sendNotificationToGuild(
       guildSettings.channelId
     );
     if (!result) return false;
-
     const { channel } = result;
     const timeoutMs = options.timeoutMs || 10000;
-
     await withRetry(
       async () => {
         await sendMessageWithTimeout(
@@ -152,10 +142,6 @@ export async function sendNotificationToGuild(
         );
       },
       { maxRetries: 3, initialDelay: 1000 }
-    );
-
-    logger.info(
-      `Sent notification to channel ${guildSettings.channelId} in guild ${guildSettings.guildId}`
     );
     return true;
   } catch (error) {
@@ -174,14 +160,12 @@ export async function sendMatchNotification(
   embed: any,
   notificationType: "score" | "daily"
 ): Promise<boolean> {
-  const pingRoles = getPingRoles(guildSettings);
-  const roleMentions = formatRoleMentions(pingRoles);
-
+  const rolesToPing = getMatchRolesToPing(match.kcId, guildSettings);
+  const roleMentions = formatRoleMentions(rolesToPing);
   let message = "";
-  if (pingRoles.length > 0) {
+  if (rolesToPing.length > 0) {
     message += `${roleMentions}\n`;
   }
-
   switch (notificationType) {
     case "score":
       message += "🏁 **Match terminé !**";
@@ -190,7 +174,6 @@ export async function sendMatchNotification(
       message += "Match du jour !";
       break;
   }
-
   return sendNotificationToGuild(client, guildSettings, {
     content: message,
     embeds: [embed],
@@ -204,7 +187,6 @@ export async function sendNotificationsToMultipleGuilds(
 ): Promise<{ success: number; failed: number }> {
   let success = 0;
   let failed = 0;
-
   for (let i = 0; i < guildSettingsList.length; i++) {
     const settings = guildSettingsList[i];
     try {
@@ -223,7 +205,6 @@ export async function sendNotificationsToMultipleGuilds(
       failed++;
     }
   }
-
   return { success, failed };
 }
 
@@ -236,7 +217,6 @@ export async function sendMatchNotificationsToMultipleGuilds(
 ): Promise<{ success: number; failed: number }> {
   let success = 0;
   let failed = 0;
-
   for (let i = 0; i < guildSettingsList.length; i++) {
     const settings = guildSettingsList[i];
     try {
@@ -261,7 +241,6 @@ export async function sendMatchNotificationsToMultipleGuilds(
       failed++;
     }
   }
-
   return { success, failed };
 }
 
@@ -283,18 +262,14 @@ export async function sendLastMinuteNotification(
       numberOfGames: match.numberOfGames,
       beginAt: match.beginAt,
     });
-
     const eligibleGuilds = filterEligibleGuilds(
       guildSettings,
       match,
       "prematch"
     );
-
     if (eligibleGuilds.length === 0) {
-      logger.info("No eligible guilds for last minute notification");
       return;
     }
-
     for (let i = 0; i < eligibleGuilds.length; i++) {
       const setting = eligibleGuilds[i];
       try {
@@ -304,21 +279,14 @@ export async function sendLastMinuteNotification(
           setting.channelId
         );
         if (!result) continue;
-
         const { channel } = result;
-        const pingRoles = (setting as any).pingRoles || [];
-        const roleMentions = formatRoleMentions(pingRoles);
+        const rolesToPing = getMatchRolesToPing(match.kcId, setting);
+        const roleMentions = formatRoleMentions(rolesToPing);
         const message =
-          pingRoles.length > 0
+          rolesToPing.length > 0
             ? `${roleMentions}\n🚨 **Le match commence !** 🚨`
             : `🚨 **Le match commence !** 🚨`;
-
         await sendMessageWithTimeout(channel, message, [embed]);
-
-        logger.info(
-          `Sent last minute notification for match ${match.id} to guild ${setting.guildId}`
-        );
-
         await addDelayIfNotLast(i, eligibleGuilds.length);
       } catch (error) {
         logger.error(
@@ -354,14 +322,10 @@ export async function sendScoreNotification(
       beginAt: match.beginAt,
       score: match.score,
     });
-
     const eligibleGuilds = filterEligibleGuilds(guildSettings, match, "score");
-
     if (eligibleGuilds.length === 0) {
-      logger.info("No eligible guilds for score notification");
       return;
     }
-
     for (let i = 0; i < eligibleGuilds.length; i++) {
       const setting = eligibleGuilds[i];
       try {
@@ -402,18 +366,14 @@ export async function sendRescheduleNotification(
       beginAt: match.beginAt,
       originalTime: originalTime,
     });
-
     const eligibleGuilds = filterEligibleGuilds(
       guildSettings,
       match,
       "reschedule"
     );
-
     if (eligibleGuilds.length === 0) {
-      logger.info("No eligible guilds for reschedule notification");
       return;
     }
-
     for (let i = 0; i < eligibleGuilds.length; i++) {
       const setting = eligibleGuilds[i];
       try {
@@ -423,21 +383,14 @@ export async function sendRescheduleNotification(
           setting.channelId
         );
         if (!result) continue;
-
         const { channel } = result;
-        const pingRoles = (setting as any).pingRoles || [];
-        const roleMentions = formatRoleMentions(pingRoles);
+        const rolesToPing = getMatchRolesToPing(match.kcId, setting);
+        const roleMentions = formatRoleMentions(rolesToPing);
         const message =
-          pingRoles.length > 0
+          rolesToPing.length > 0
             ? `${roleMentions}\n **Match reporté !**`
             : ` **Match reporté !**`;
-
         await sendMessageWithTimeout(channel, message, [embed]);
-
-        logger.info(
-          `Sent reschedule notification for match ${match.id} to guild ${setting.guildId}`
-        );
-
         await addDelayIfNotLast(i, eligibleGuilds.length);
       } catch (error) {
         logger.error(
@@ -461,14 +414,9 @@ export async function sendDailyMatchAnnouncement(
 ): Promise<boolean> {
   try {
     if (guildSettings.length === 0) {
-      logger.info(
-        "⚠️  No guild settings found - no channels configured for announcements"
-      );
       return false;
     }
-
     let hasSuccessfulAnnouncements = false;
-
     for (let i = 0; i < guildSettings.length; i++) {
       const settings = guildSettings[i];
       try {
@@ -478,35 +426,32 @@ export async function sendDailyMatchAnnouncement(
           settings.channelId
         );
         if (!result) continue;
-
         const { guild, channel } = result;
         let filteredMatches = matches;
-
-        if (
-          (settings as any).filteredTeams &&
-          (settings as any).filteredTeams.length > 0
-        ) {
+        if (settings.filteredTeams && settings.filteredTeams.length > 0) {
           filteredMatches = matches.filter((match) =>
-            (settings as any).filteredTeams.includes(match.kcId)
+            settings.filteredTeams.includes(match.kcId)
           );
         }
-
         if (filteredMatches.length === 0) {
-          logger.info(
-            `⏭️  No matches to announce for guild ${guild.name} (filtered)`
-          );
           continue;
         }
-
-        const pingRoles = (settings as any).pingRoles || [];
-        const roleMentions = formatRoleMentions(pingRoles);
+        const allTeamIds = [...new Set(filteredMatches.map((m) => m.kcId))];
+        const allRoles: string[] = [];
+        for (const teamId of allTeamIds) {
+          const roles = getMatchRolesToPing(teamId, settings);
+          for (const role of roles) {
+            if (!allRoles.includes(role)) {
+              allRoles.push(role);
+            }
+          }
+        }
+        const roleMentions = formatRoleMentions(allRoles);
         const pingMessage =
-          pingRoles.length > 0
+          allRoles.length > 0
             ? `${roleMentions} Match(s) des prochaines 24h !`
             : "Match(s) des prochaines 24h !";
-
         await channel.send(pingMessage);
-
         for (const match of filteredMatches) {
           try {
             const embed = await createMatchEmbed({
@@ -521,34 +466,26 @@ export async function sendDailyMatchAnnouncement(
               numberOfGames: match.numberOfGames,
               beginAt: match.beginAt,
             });
-
             await channel.send({ embeds: [embed] });
-
             if (filteredMatches.indexOf(match) < filteredMatches.length - 1) {
               await new Promise((resolve) => setTimeout(resolve, 1000));
             }
           } catch (matchError) {
-            logger.error(`❌ Error sending match ${match.id}:`, matchError);
+            logger.error(`Error sending match ${match.id}:`, matchError);
           }
         }
-
-        logger.info(
-          `✅ Successfully announced ${filteredMatches.length} matches in guild ${guild.name}`
-        );
         hasSuccessfulAnnouncements = true;
-
         await addDelayIfNotLast(i, guildSettings.length);
       } catch (error) {
         logger.error(
-          `❌ Failed to announce matches in guild ${settings.guildId}:`,
+          `Failed to announce matches in guild ${settings.guildId}:`,
           error
         );
       }
     }
-
     return hasSuccessfulAnnouncements;
   } catch (error) {
-    logger.error("❌ Error announcing matches:", error);
+    logger.error("Error announcing matches:", error);
     throw error;
   }
 }
@@ -559,12 +496,8 @@ export async function sendNoMatchesAnnouncement(
 ): Promise<void> {
   try {
     if (guildSettings.length === 0) {
-      logger.info(
-        "⚠️  No guild settings found - no channels configured for announcements"
-      );
       return;
     }
-
     for (let i = 0; i < guildSettings.length; i++) {
       const settings = guildSettings[i];
       try {
@@ -574,21 +507,18 @@ export async function sendNoMatchesAnnouncement(
           settings.channelId
         );
         if (!result) continue;
-
-        const { guild, channel } = result;
+        const { channel } = result;
         await channel.send("🔔 Pas de match aujourd'hui");
-        logger.info(`✅ Sent "no matches" message in guild ${guild.name}`);
-
         await addDelayIfNotLast(i, guildSettings.length);
       } catch (error) {
         logger.error(
-          `❌ Failed to send "no matches" message in guild ${settings.guildId}:`,
+          `Failed to send "no matches" message in guild ${settings.guildId}:`,
           error
         );
       }
     }
   } catch (error) {
-    logger.error("❌ Error sending no matches message:", error);
+    logger.error("Error sending no matches message:", error);
     throw error;
   }
 }
@@ -600,38 +530,25 @@ export async function sendChangelogNotification(
 ): Promise<{ sentCount: number; errorCount: number }> {
   let sentCount = 0;
   let errorCount = 0;
-
   for (let i = 0; i < guildSettings.length; i++) {
     const guild = guildSettings[i];
     try {
       const channel = await client.channels.fetch(guild.channelId);
-
       if (!channel || !channel.isTextBased()) {
-        logger.warn(
-          `Invalid channel ${guild.channelId} for guild ${guild.guildId}`
-        );
         continue;
       }
-
       if ("send" in channel) {
         await channel.send(changelogText);
       } else {
-        logger.warn(
-          `Channel ${guild.channelId} does not support sending messages`
-        );
         continue;
       }
-
       sentCount++;
-      logger.info(`Sent changelog to guild ${guild.guildId} (${guild.name})`);
-
       await addDelayIfNotLast(i, guildSettings.length);
     } catch (error) {
       errorCount++;
       logger.error(`Error sending changelog to guild ${guild.guildId}:`, error);
     }
   }
-
   return { sentCount, errorCount };
 }
 
@@ -645,6 +562,7 @@ export async function sendTwitchStreamNotification(
   twitchService: TwitchService
 ): Promise<void> {
   try {
+    logger.info(`Processing Twitch notification for ${playerName} (${teamName}, teamId: ${teamId})`);
     const eligibleGuilds = guildSettings.filter((setting) => {
       if (!isTwitchNotificationsEnabled(setting)) {
         return false;
@@ -654,14 +572,10 @@ export async function sendTwitchStreamNotification(
       }
       return true;
     });
-
+    logger.info(`Found ${eligibleGuilds.length} eligible guilds for Twitch notification (total: ${guildSettings.length})`);
     if (eligibleGuilds.length === 0) {
-      logger.info(
-        `No eligible guilds for Twitch stream notification (${playerName} - ${teamName})`
-      );
       return;
     }
-
     const streamData: StreamData = {
       title: stream.title,
       playerName: playerName,
@@ -675,9 +589,7 @@ export async function sendTwitchStreamNotification(
       thumbnailUrl: stream.thumbnail_url,
       startedAt: new Date(stream.started_at),
     };
-
     const embed = await createStreamEmbed(streamData, twitchService);
-
     for (let i = 0; i < eligibleGuilds.length; i++) {
       const setting = eligibleGuilds[i];
       try {
@@ -686,17 +598,19 @@ export async function sendTwitchStreamNotification(
           setting.guildId,
           setting.channelId
         );
-        if (!result) continue;
-
+        if (!result) {
+          logger.warn(`Could not get channel for guild ${setting.guildId}`);
+          continue;
+        }
         const { channel } = result;
-        const message = `🔴 **${playerName} est en live sur Twitch !**`;
-
+        const rolesToPing = getTwitchRolesToPing(teamId, setting);
+        const roleMentions = formatRoleMentions(rolesToPing);
+        const message =
+          rolesToPing.length > 0
+            ? `${roleMentions}\n🔴 **${playerName} est en live sur Twitch !**`
+            : `🔴 **${playerName} est en live sur Twitch !**`;
         await sendMessageWithTimeout(channel, message, [embed]);
-
-        logger.info(
-          `Sent Twitch stream notification for ${playerName} (${teamName}) to guild ${setting.guildId}`
-        );
-
+        logger.info(`Sent Twitch notification for ${playerName} to guild ${setting.guildId}`);
         await addDelayIfNotLast(i, eligibleGuilds.length);
       } catch (error) {
         logger.error(
@@ -712,3 +626,4 @@ export async function sendTwitchStreamNotification(
     );
   }
 }
+

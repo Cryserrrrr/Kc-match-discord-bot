@@ -10,7 +10,7 @@ import {
 import { prisma } from "../index";
 import { logger } from "../utils/logger";
 
-const TEAMS = {
+const TEAMS: Record<string, string> = {
   "134078": "KC (LEC)",
   "128268": "KCB (LFL)",
   "136080": "KCBS (LFL2)",
@@ -21,11 +21,20 @@ const TEAMS = {
 };
 
 let selectedTeams: string[] = [];
-let selectedRoles: string[] = [];
+let selectedTeamRoles: Record<string, string> = {};
+let currentEditingTeamId: string | null = null;
+
 function createBackButton(): ButtonBuilder {
   return new ButtonBuilder()
     .setCustomId("back_to_main")
     .setLabel("← Retour au menu principal")
+    .setStyle(ButtonStyle.Secondary);
+}
+
+function createRolesBackButton(): ButtonBuilder {
+  return new ButtonBuilder()
+    .setCustomId("back_to_roles_menu")
+    .setLabel("← Retour aux rôles")
     .setStyle(ButtonStyle.Secondary);
 }
 
@@ -38,10 +47,8 @@ function createActionRow(
 async function safeInteractionUpdate(interaction: any, options: any) {
   try {
     if (!interaction || interaction.isExpired) {
-      logger.warn("Interaction is no longer valid, skipping update");
       return;
     }
-
     if (interaction.deferred && interaction.editReply) {
       await interaction.editReply(options);
     } else if (interaction.update) {
@@ -49,41 +56,16 @@ async function safeInteractionUpdate(interaction: any, options: any) {
     } else if (interaction.editReply) {
       await interaction.editReply(options);
     }
-
-    setTimeout(async () => {
-      try {
-        if (interaction && !interaction.isExpired) {
-          await interaction.editReply({
-            embeds: [
-              {
-                title: "⏰ Session expirée",
-                description:
-                  "Cette session de configuration a expiré.\nUtilisez `/config` pour recommencer.",
-                color: 0xff9900,
-                timestamp: new Date().toISOString(),
-              },
-            ],
-            components: [],
-          });
-        }
-      } catch (error) {
-        logger.warn("Could not update expired interaction:", error);
-      }
-    }, 60000);
   } catch (error: any) {
     if (
       error.code === 10062 ||
       error.message?.includes("Unknown interaction")
     ) {
-      logger.warn("Interaction expired or became invalid, skipping update");
       return;
     }
-
     if (error.code && error.code >= 10000 && error.code < 10099) {
-      logger.warn(`Discord API error ${error.code}: ${error.message}`);
       return;
     }
-
     logger.error("Error in safeInteractionUpdate:", error);
   }
 }
@@ -93,10 +75,10 @@ export async function showChannelConfig(interaction: any, guildSettings: any) {
     .setTitle("📺 Configuration du Canal d'Annonce")
     .setDescription(
       "Sélectionnez le canal où les annonces de matchs seront envoyées.\n\n" +
-        "**Canal actuel :** " +
-        (guildSettings?.channelId
-          ? `<#${guildSettings.channelId}>`
-          : "Non configuré")
+      "**Canal actuel :** " +
+      (guildSettings?.channelId
+        ? `<#${guildSettings.channelId}>`
+        : "Non configuré")
     )
     .setColor(0x0099ff);
 
@@ -118,15 +100,8 @@ export async function showChannelConfig(interaction: any, guildSettings: any) {
   if (textChannels.length === 0) {
     const noChannelsEmbed = new EmbedBuilder()
       .setTitle("📺 Configuration du Canal d'Annonce")
-      .setDescription(
-        "Aucun canal texte trouvé dans ce serveur.\n\n" +
-          "**Canal actuel :** " +
-          (guildSettings?.channelId
-            ? `<#${guildSettings.channelId}>`
-            : "Non configuré")
-      )
+      .setDescription("Aucun canal texte trouvé dans ce serveur.")
       .setColor(0xff0000);
-
     await safeInteractionUpdate(interaction, {
       embeds: [noChannelsEmbed],
       components: [createActionRow([createBackButton()])],
@@ -174,10 +149,8 @@ export async function handleChannelSelection(
       error.code === 10062 ||
       error.message?.includes("Unknown interaction")
     ) {
-      logger.warn("Interaction expired during channel selection, skipping");
       return;
     }
-    logger.error("Error deferring channel selection update:", error);
     return;
   }
 
@@ -189,7 +162,6 @@ export async function handleChannelSelection(
     create: {
       guildId,
       channelId: selectedChannelId,
-      pingRoles: [],
       name: interaction.guild?.name || "Unknown Guild",
       memberCount: interaction.guild?.memberCount || 0,
     },
@@ -211,21 +183,79 @@ export async function handleChannelSelection(
     embeds: [embed],
     components: [createActionRow([createBackButton()])],
   });
-
-  logger.info(
-    `Guild ${guildId} set announcement channel to ${selectedChannelId}`
-  );
 }
 
 export async function showRolesConfig(interaction: any, guildSettings: any) {
-  const currentPingRoles = (guildSettings as any)?.pingRoles || [];
-  selectedRoles = [...currentPingRoles];
+  const matchRole = guildSettings?.matchAnnouncementRole;
+  const twitchRole = guildSettings?.twitchLiveRole;
+  const teamRoles = (guildSettings?.teamRoles as Record<string, string>) || {};
+  const teamRolesCount = Object.keys(teamRoles).filter(
+    (k) => teamRoles[k]
+  ).length;
 
   const embed = new EmbedBuilder()
-    .setTitle("👥 Configuration des Rôles à Mentionner")
+    .setTitle("👥 Configuration des Rôles")
+    .setDescription("Configurez les rôles à mentionner pour chaque type de notification.")
+    .setColor(0x0099ff)
+    .addFields(
+      {
+        name: "📢 Rôle Annonces Match",
+        value: matchRole ? `<@&${matchRole}>` : "Non configuré",
+        inline: true,
+      },
+      {
+        name: "🔴 Rôle Live Twitch",
+        value: twitchRole ? `<@&${twitchRole}>` : "Non configuré",
+        inline: true,
+      },
+      {
+        name: "🏆 Rôles par Équipe",
+        value: teamRolesCount > 0 ? `${teamRolesCount} équipe(s) configurée(s)` : "Non configuré",
+        inline: true,
+      }
+    );
+
+  const rolesMenu = new StringSelectMenuBuilder()
+    .setCustomId("roles_submenu")
+    .setPlaceholder("Sélectionnez le type de rôle à configurer")
+    .addOptions(
+      new StringSelectMenuOptionBuilder()
+        .setLabel("Rôle Annonces Match")
+        .setDescription("Matchs, scores et notifications journalières")
+        .setValue("match_role")
+        .setEmoji("📢"),
+      new StringSelectMenuOptionBuilder()
+        .setLabel("Rôle Live Twitch")
+        .setDescription("Notifications de stream Twitch")
+        .setValue("twitch_role")
+        .setEmoji("🔴"),
+      new StringSelectMenuOptionBuilder()
+        .setLabel("Rôles par Équipe")
+        .setDescription("Un rôle par équipe KC")
+        .setValue("team_roles")
+        .setEmoji("🏆")
+    );
+
+  const menuRow = new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(
+    rolesMenu
+  );
+  const buttonRow = createActionRow([createBackButton()]);
+
+  await safeInteractionUpdate(interaction, {
+    embeds: [embed],
+    components: [menuRow, buttonRow],
+  });
+}
+
+export async function showMatchRoleConfig(interaction: any, guildSettings: any) {
+  const currentRole = guildSettings?.matchAnnouncementRole;
+
+  const embed = new EmbedBuilder()
+    .setTitle("📢 Rôle Annonces Match")
     .setDescription(
-      "Sélectionnez les rôles qui seront mentionnés dans les annonces de matchs.\n\n" +
-        "**Rôles actuellement sélectionnés :**"
+      "Sélectionnez le rôle à mentionner pour les annonces de match, scores et notifications journalières.\n\n" +
+      "**Rôle actuel :** " +
+      (currentRole ? `<@&${currentRole}>` : "Aucun")
     )
     .setColor(0x0099ff);
 
@@ -233,155 +263,249 @@ export async function showRolesConfig(interaction: any, guildSettings: any) {
   const roles = Array.from(guild.roles.cache.values())
     .filter((role: any) => !role.managed && role.name !== "@everyone")
     .sort((a: any, b: any) => b.position - a.position)
-    .slice(0, 18);
+    .slice(0, 23);
 
   const specialRoles = [
-    { id: "everyone", name: "@everyone", isSpecial: true },
-    { id: "here", name: "@here", isSpecial: true },
+    { id: "none", name: "❌ Aucun rôle", description: "Désactiver les mentions" },
+    { id: "everyone", name: "@everyone", description: "Mentionner tout le monde" },
+    { id: "here", name: "@here", description: "Mentionner les présents" },
   ];
 
-  const allRoles = [...specialRoles, ...roles];
+  const options = [
+    ...specialRoles.map((r) =>
+      new StringSelectMenuOptionBuilder()
+        .setLabel(r.name)
+        .setDescription(r.description)
+        .setValue(`match_role_${r.id}`)
+        .setDefault(currentRole === r.id || (!currentRole && r.id === "none"))
+    ),
+    ...roles.map((role: any) =>
+      new StringSelectMenuOptionBuilder()
+        .setLabel(role.name.substring(0, 100))
+        .setValue(`match_role_${role.id}`)
+        .setDefault(currentRole === role.id)
+    ),
+  ];
 
-  if (allRoles.length === 0) {
-    const noRolesEmbed = new EmbedBuilder()
-      .setTitle("👥 Configuration des Rôles à Mentionner")
-      .setDescription(
-        "Aucun rôle trouvé dans ce serveur.\n\n" +
-          "**Rôles actuellement sélectionnés :** " +
-          (currentPingRoles.length === 0
-            ? "Aucun"
-            : `${currentPingRoles.length} rôle(s)`)
-      )
-      .setColor(0xff0000);
+  const roleMenu = new StringSelectMenuBuilder()
+    .setCustomId("match_role_select")
+    .setPlaceholder("Sélectionnez un rôle")
+    .addOptions(options.slice(0, 25));
 
-    await safeInteractionUpdate(interaction, {
-      embeds: [noRolesEmbed],
-      components: [createActionRow([createBackButton()])],
-    });
-    return;
-  }
-
-  const roleStatus = allRoles
-    .map((role: any) => {
-      const isSelected = selectedRoles.includes(role.id);
-      if (role.isSpecial) {
-        return `${isSelected ? "✅" : "❌"} ${role.name}`;
-      }
-      return `${isSelected ? "✅" : "❌"} <@&${role.id}>`;
-    })
-    .join("\n");
-
-  embed.addFields({
-    name: "État des rôles",
-    value: roleStatus || "Aucun rôle sélectionné",
-    inline: false,
-  });
-
-  const roleButtons = allRoles.map((role: any) => {
-    const isSelected = selectedRoles.includes(role.id);
-    return new ButtonBuilder()
-      .setCustomId(`role_${role.id}`)
-      .setLabel(
-        role.name.length > 20 ? role.name.substring(0, 17) + "..." : role.name
-      )
-      .setStyle(isSelected ? ButtonStyle.Success : ButtonStyle.Secondary);
-  });
-
-  const actionRows = [];
-  for (let i = 0; i < roleButtons.length; i += 5) {
-    actionRows.push(createActionRow(roleButtons.slice(i, i + 5)));
-  }
-
-  const controlRow = createActionRow([
-    new ButtonBuilder()
-      .setCustomId("confirm_roles")
-      .setLabel("✅ Confirmer")
-      .setStyle(ButtonStyle.Primary),
-    new ButtonBuilder()
-      .setCustomId("clear_roles")
-      .setLabel("🗑️ Tout effacer")
-      .setStyle(ButtonStyle.Danger),
-    createBackButton(),
-  ]);
-
-  actionRows.push(controlRow);
+  const menuRow = new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(
+    roleMenu
+  );
+  const buttonRow = createActionRow([createRolesBackButton()]);
 
   await safeInteractionUpdate(interaction, {
     embeds: [embed],
-    components: actionRows,
+    components: [menuRow, buttonRow],
   });
 }
 
-export async function handleRoleSelection(interaction: any, guildId: string) {
-  const roleId = interaction.customId.replace("role_", "");
-
-  if (selectedRoles.includes(roleId)) {
-    selectedRoles = selectedRoles.filter((id) => id !== roleId);
-  } else {
-    selectedRoles.push(roleId);
-  }
-
-  await updateRolesDisplay(interaction, guildId);
-}
-
-export async function handleRolesConfirmation(
+export async function handleMatchRoleSelection(
   interaction: any,
   guildId: string
 ) {
   try {
     await interaction.deferUpdate();
-  } catch (error: any) {
-    if (
-      error.code === 10062 ||
-      error.message?.includes("Unknown interaction")
-    ) {
-      logger.warn("Interaction expired during roles confirmation, skipping");
-      return;
-    }
-    logger.error("Error deferring roles confirmation update:", error);
+  } catch {
     return;
   }
 
+  const selectedValue = interaction.values[0].replace("match_role_", "");
+  const roleValue = selectedValue === "none" ? null : selectedValue;
+
   await prisma.guildSettings.update({
     where: { guildId },
-    data: { pingRoles: selectedRoles } as any,
+    data: { matchAnnouncementRole: roleValue },
   });
 
-  const responseMessage =
-    selectedRoles.length === 0
-      ? "✅ **Configuration mise à jour :** Aucun rôle ne sera mentionné dans les annonces."
-      : `✅ **Configuration mise à jour :** Les rôles suivants seront mentionnés :\n${selectedRoles
-          .map((id) => {
-            if (id === "everyone") return "@everyone";
-            if (id === "here") return "@here";
-            return `<@&${id}>`;
-          })
-          .join("\n")}`;
+  const embed = new EmbedBuilder()
+    .setColor(0x00ff00)
+    .setTitle("✅ Rôle Annonces Match configuré")
+    .setDescription(
+      roleValue
+        ? roleValue === "everyone"
+          ? "Le rôle @everyone sera mentionné"
+          : roleValue === "here"
+            ? "Le rôle @here sera mentionné"
+            : `Le rôle <@&${roleValue}> sera mentionné`
+        : "Aucun rôle ne sera mentionné"
+    )
+    .setTimestamp();
 
   await safeInteractionUpdate(interaction, {
-    content: responseMessage,
-    embeds: [],
-    components: [],
+    embeds: [embed],
+    components: [createActionRow([createRolesBackButton()])],
+  });
+}
+
+export async function showTwitchRoleConfig(interaction: any, guildSettings: any) {
+  const currentRole = guildSettings?.twitchLiveRole;
+
+  const embed = new EmbedBuilder()
+    .setTitle("🔴 Rôle Live Twitch")
+    .setDescription(
+      "Sélectionnez le rôle à mentionner pour les notifications de stream Twitch.\n\n" +
+      "**Rôle actuel :** " +
+      (currentRole ? `<@&${currentRole}>` : "Aucun")
+    )
+    .setColor(0x9146ff);
+
+  const guild = interaction.guild;
+  const roles = Array.from(guild.roles.cache.values())
+    .filter((role: any) => !role.managed && role.name !== "@everyone")
+    .sort((a: any, b: any) => b.position - a.position)
+    .slice(0, 23);
+
+  const specialRoles = [
+    { id: "none", name: "❌ Aucun rôle", description: "Désactiver les mentions" },
+    { id: "everyone", name: "@everyone", description: "Mentionner tout le monde" },
+    { id: "here", name: "@here", description: "Mentionner les présents" },
+  ];
+
+  const options = [
+    ...specialRoles.map((r) =>
+      new StringSelectMenuOptionBuilder()
+        .setLabel(r.name)
+        .setDescription(r.description)
+        .setValue(`twitch_role_${r.id}`)
+        .setDefault(currentRole === r.id || (!currentRole && r.id === "none"))
+    ),
+    ...roles.map((role: any) =>
+      new StringSelectMenuOptionBuilder()
+        .setLabel(role.name.substring(0, 100))
+        .setValue(`twitch_role_${role.id}`)
+        .setDefault(currentRole === role.id)
+    ),
+  ];
+
+  const roleMenu = new StringSelectMenuBuilder()
+    .setCustomId("twitch_role_select")
+    .setPlaceholder("Sélectionnez un rôle")
+    .addOptions(options.slice(0, 25));
+
+  const menuRow = new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(
+    roleMenu
+  );
+  const buttonRow = createActionRow([createRolesBackButton()]);
+
+  await safeInteractionUpdate(interaction, {
+    embeds: [embed],
+    components: [menuRow, buttonRow],
+  });
+}
+
+export async function handleTwitchRoleSelection(
+  interaction: any,
+  guildId: string
+) {
+  try {
+    await interaction.deferUpdate();
+  } catch {
+    return;
+  }
+
+  const selectedValue = interaction.values[0].replace("twitch_role_", "");
+  const roleValue = selectedValue === "none" ? null : selectedValue;
+
+  await prisma.guildSettings.update({
+    where: { guildId },
+    data: { twitchLiveRole: roleValue },
   });
 
-  logger.info(
-    `Guild ${guildId} updated ping roles: ${
-      selectedRoles.join(", ") || "no roles"
-    }`
-  );
-}
-
-export async function handleRolesClear(interaction: any, guildId: string) {
-  selectedRoles = [];
-  await updateRolesDisplay(interaction, guildId);
-}
-
-async function updateRolesDisplay(interaction: any, guildId: string) {
   const embed = new EmbedBuilder()
-    .setTitle("👥 Configuration des Rôles à Mentionner")
+    .setColor(0x00ff00)
+    .setTitle("✅ Rôle Live Twitch configuré")
     .setDescription(
-      "Sélectionnez les rôles qui seront mentionnés dans les annonces de matchs.\n\n" +
-        "**Rôles actuellement sélectionnés :**"
+      roleValue
+        ? roleValue === "everyone"
+          ? "Le rôle @everyone sera mentionné"
+          : roleValue === "here"
+            ? "Le rôle @here sera mentionné"
+            : `Le rôle <@&${roleValue}> sera mentionné`
+        : "Aucun rôle ne sera mentionné"
+    )
+    .setTimestamp();
+
+  await safeInteractionUpdate(interaction, {
+    embeds: [embed],
+    components: [createActionRow([createRolesBackButton()])],
+  });
+}
+
+export async function showTeamRolesConfig(interaction: any, guildSettings: any) {
+  const teamRoles = (guildSettings?.teamRoles as Record<string, string>) || {};
+  selectedTeamRoles = { ...teamRoles };
+
+  const embed = new EmbedBuilder()
+    .setTitle("🏆 Rôles par Équipe")
+    .setDescription(
+      "Configurez un rôle à mentionner pour chaque équipe KC.\n" +
+      "Ce rôle sera mentionné en plus du rôle d'annonce principal."
+    )
+    .setColor(0x0099ff);
+
+  const teamStatus = Object.entries(TEAMS)
+    .map(([id, name]) => {
+      const roleId = teamRoles[id];
+      return `${roleId ? "✅" : "❌"} **${name}** : ${roleId ? `<@&${roleId}>` : "Non configuré"
+        }`;
+    })
+    .join("\n");
+
+  embed.addFields({
+    name: "État des équipes",
+    value: teamStatus,
+    inline: false,
+  });
+
+  const teamMenu = new StringSelectMenuBuilder()
+    .setCustomId("team_role_select_team")
+    .setPlaceholder("Sélectionnez une équipe à configurer")
+    .addOptions(
+      Object.entries(TEAMS).map(([id, name]) =>
+        new StringSelectMenuOptionBuilder()
+          .setLabel(name)
+          .setValue(`team_${id}`)
+          .setDescription(teamRoles[id] ? "Rôle configuré" : "Non configuré")
+      )
+    );
+
+  const menuRow = new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(
+    teamMenu
+  );
+
+  const clearButton = new ButtonBuilder()
+    .setCustomId("clear_team_roles")
+    .setLabel("🗑️ Tout effacer")
+    .setStyle(ButtonStyle.Danger);
+
+  const buttonRow = createActionRow([clearButton, createRolesBackButton()]);
+
+  await safeInteractionUpdate(interaction, {
+    embeds: [embed],
+    components: [menuRow, buttonRow],
+  });
+}
+
+export async function showTeamRoleSelection(
+  interaction: any,
+  teamId: string,
+  guildSettings: any
+) {
+  currentEditingTeamId = teamId;
+  const teamName = TEAMS[teamId] || teamId;
+  const teamRoles = (guildSettings?.teamRoles as Record<string, string>) || {};
+  const currentRole = teamRoles[teamId];
+
+  const embed = new EmbedBuilder()
+    .setTitle(`🏆 Rôle pour ${teamName}`)
+    .setDescription(
+      `Sélectionnez le rôle à mentionner pour l'équipe **${teamName}**.\n\n` +
+      "**Rôle actuel :** " +
+      (currentRole ? `<@&${currentRole}>` : "Aucun")
     )
     .setColor(0x0099ff);
 
@@ -389,68 +513,124 @@ async function updateRolesDisplay(interaction: any, guildId: string) {
   const roles = Array.from(guild.roles.cache.values())
     .filter((role: any) => !role.managed && role.name !== "@everyone")
     .sort((a: any, b: any) => b.position - a.position)
-    .slice(0, 18);
+    .slice(0, 24);
 
-  const specialRoles = [
-    { id: "everyone", name: "@everyone", isSpecial: true },
-    { id: "here", name: "@here", isSpecial: true },
+  const options = [
+    new StringSelectMenuOptionBuilder()
+      .setLabel("❌ Aucun rôle")
+      .setDescription("Ne pas mentionner de rôle spécifique")
+      .setValue(`teamrole_${teamId}_none`)
+      .setDefault(!currentRole),
+    ...roles.map((role: any) =>
+      new StringSelectMenuOptionBuilder()
+        .setLabel(role.name.substring(0, 100))
+        .setValue(`teamrole_${teamId}_${role.id}`)
+        .setDefault(currentRole === role.id)
+    ),
   ];
 
-  const allRoles = [...specialRoles, ...roles];
+  const roleMenu = new StringSelectMenuBuilder()
+    .setCustomId("team_role_assign")
+    .setPlaceholder("Sélectionnez un rôle")
+    .addOptions(options.slice(0, 25));
 
-  const roleStatus = allRoles
-    .map((role: any) => {
-      const isSelected = selectedRoles.includes(role.id);
-      if (role.isSpecial) {
-        return `${isSelected ? "✅" : "❌"} ${role.name}`;
-      }
-      return `${isSelected ? "✅" : "❌"} <@&${role.id}>`;
-    })
-    .join("\n");
+  const menuRow = new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(
+    roleMenu
+  );
 
-  embed.addFields({
-    name: "État des rôles",
-    value: roleStatus || "Aucun rôle sélectionné",
-    inline: false,
-  });
+  const backToTeamsButton = new ButtonBuilder()
+    .setCustomId("back_to_team_roles")
+    .setLabel("← Retour aux équipes")
+    .setStyle(ButtonStyle.Secondary);
 
-  const roleButtons = allRoles.map((role: any) => {
-    const isSelected = selectedRoles.includes(role.id);
-    return new ButtonBuilder()
-      .setCustomId(`role_${role.id}`)
-      .setLabel(
-        role.name.length > 20 ? role.name.substring(0, 17) + "..." : role.name
-      )
-      .setStyle(isSelected ? ButtonStyle.Success : ButtonStyle.Secondary);
-  });
-
-  const actionRows = [];
-  for (let i = 0; i < roleButtons.length; i += 5) {
-    actionRows.push(createActionRow(roleButtons.slice(i, i + 5)));
-  }
-
-  const controlRow = createActionRow([
-    new ButtonBuilder()
-      .setCustomId("confirm_roles")
-      .setLabel("✅ Confirmer")
-      .setStyle(ButtonStyle.Primary),
-    new ButtonBuilder()
-      .setCustomId("clear_roles")
-      .setLabel("🗑️ Tout effacer")
-      .setStyle(ButtonStyle.Danger),
-    createBackButton(),
-  ]);
-
-  actionRows.push(controlRow);
+  const buttonRow = createActionRow([backToTeamsButton]);
 
   await safeInteractionUpdate(interaction, {
     embeds: [embed],
-    components: actionRows,
+    components: [menuRow, buttonRow],
+  });
+}
+
+export async function handleTeamRoleAssignment(
+  interaction: any,
+  guildId: string
+) {
+  try {
+    await interaction.deferUpdate();
+  } catch {
+    return;
+  }
+
+  const value = interaction.values[0];
+  const parts = value.replace("teamrole_", "").split("_");
+  const teamId = parts[0];
+  const roleId = parts[1];
+
+  const guildSettings = await prisma.guildSettings.findUnique({
+    where: { guildId },
+  });
+
+  const teamRoles = ((guildSettings as any)?.teamRoles as Record<string, string>) || {};
+
+  if (roleId === "none") {
+    delete teamRoles[teamId];
+  } else {
+    teamRoles[teamId] = roleId;
+  }
+
+  await prisma.guildSettings.update({
+    where: { guildId },
+    data: { teamRoles: teamRoles },
+  });
+
+  const teamName = TEAMS[teamId] || teamId;
+  const embed = new EmbedBuilder()
+    .setColor(0x00ff00)
+    .setTitle("✅ Rôle d'équipe configuré")
+    .setDescription(
+      roleId === "none"
+        ? `Aucun rôle ne sera mentionné pour **${teamName}**`
+        : `Le rôle <@&${roleId}> sera mentionné pour **${teamName}**`
+    )
+    .setTimestamp();
+
+  const backToTeamsButton = new ButtonBuilder()
+    .setCustomId("back_to_team_roles")
+    .setLabel("← Retour aux équipes")
+    .setStyle(ButtonStyle.Secondary);
+
+  await safeInteractionUpdate(interaction, {
+    embeds: [embed],
+    components: [createActionRow([backToTeamsButton])],
+  });
+}
+
+export async function handleClearTeamRoles(interaction: any, guildId: string) {
+  try {
+    await interaction.deferUpdate();
+  } catch {
+    return;
+  }
+
+  await prisma.guildSettings.update({
+    where: { guildId },
+    data: { teamRoles: {} },
+  });
+
+  const embed = new EmbedBuilder()
+    .setColor(0x00ff00)
+    .setTitle("✅ Rôles d'équipe effacés")
+    .setDescription("Tous les rôles d'équipe ont été supprimés.")
+    .setTimestamp();
+
+  await safeInteractionUpdate(interaction, {
+    embeds: [embed],
+    components: [createActionRow([createRolesBackButton()])],
   });
 }
 
 export async function showTeamsConfig(interaction: any, guildSettings: any) {
-  const currentFilteredTeams = (guildSettings as any)?.filteredTeams || [];
+  const currentFilteredTeams = guildSettings?.filteredTeams || [];
   selectedTeams =
     currentFilteredTeams.length === 0
       ? Object.keys(TEAMS)
@@ -459,8 +639,7 @@ export async function showTeamsConfig(interaction: any, guildSettings: any) {
   const embed = new EmbedBuilder()
     .setTitle("🏆 Configuration du Filtre d'Équipes")
     .setDescription(
-      "Sélectionnez les équipes que vous souhaitez annoncer. Cliquez sur les boutons pour activer/désactiver les équipes.\n\n" +
-        "**Équipes actuellement sélectionnées :**"
+      "Sélectionnez les équipes dont vous souhaitez recevoir les annonces."
     )
     .setColor(0x0099ff);
 
@@ -473,7 +652,7 @@ export async function showTeamsConfig(interaction: any, guildSettings: any) {
 
   embed.addFields({
     name: "État des équipes",
-    value: teamStatus || "Aucune équipe sélectionnée",
+    value: teamStatus,
     inline: false,
   });
 
@@ -516,14 +695,12 @@ export async function showTeamsConfig(interaction: any, guildSettings: any) {
 
 export async function handleTeamSelection(interaction: any, guildId: string) {
   const teamId = interaction.customId.replace("team_", "");
-
   if (selectedTeams.includes(teamId)) {
     selectedTeams = selectedTeams.filter((id) => id !== teamId);
   } else {
     selectedTeams.push(teamId);
   }
-
-  await updateTeamsDisplay(interaction, guildId);
+  await updateTeamsDisplay(interaction);
 }
 
 export async function handleTeamsConfirmation(
@@ -532,30 +709,22 @@ export async function handleTeamsConfirmation(
 ) {
   try {
     await interaction.deferUpdate();
-  } catch (error: any) {
-    if (
-      error.code === 10062 ||
-      error.message?.includes("Unknown interaction")
-    ) {
-      logger.warn("Interaction expired during teams confirmation, skipping");
-      return;
-    }
-    logger.error("Error deferring teams confirmation update:", error);
+  } catch {
     return;
   }
 
   await prisma.guildSettings.update({
     where: { guildId },
-    data: { filteredTeams: selectedTeams } as any,
+    data: { filteredTeams: selectedTeams },
   });
 
   const responseMessage =
     selectedTeams.length === 0
-      ? "✅ **Filtre mis à jour :** Toutes les équipes de Karmine Corp seront annoncées."
+      ? "✅ **Filtre mis à jour :** Toutes les équipes seront annoncées."
       : `✅ **Filtre mis à jour :** Seules les équipes suivantes seront annoncées :\n${selectedTeams
-          .map((id) => TEAMS[id as keyof typeof TEAMS] || id)
-          .map((name) => `• ${name}`)
-          .join("\n")}`;
+        .map((id) => TEAMS[id] || id)
+        .map((name) => `• ${name}`)
+        .join("\n")}`;
 
   await safeInteractionUpdate(interaction, {
     content: responseMessage,
@@ -566,20 +735,19 @@ export async function handleTeamsConfirmation(
 
 export async function handleTeamsClear(interaction: any, guildId: string) {
   selectedTeams = [];
-  await updateTeamsDisplay(interaction, guildId);
+  await updateTeamsDisplay(interaction);
 }
 
 export async function handleTeamsSelectAll(interaction: any, guildId: string) {
   selectedTeams = Object.keys(TEAMS);
-  await updateTeamsDisplay(interaction, guildId);
+  await updateTeamsDisplay(interaction);
 }
 
-async function updateTeamsDisplay(interaction: any, guildId: string) {
+async function updateTeamsDisplay(interaction: any) {
   const embed = new EmbedBuilder()
     .setTitle("🏆 Configuration du Filtre d'Équipes")
     .setDescription(
-      "Sélectionnez les équipes que vous souhaitez annoncer. Cliquez sur les boutons pour activer/désactiver les équipes.\n\n" +
-        "**Équipes actuellement sélectionnées :**"
+      "Sélectionnez les équipes dont vous souhaitez recevoir les annonces."
     )
     .setColor(0x0099ff);
 
@@ -592,7 +760,7 @@ async function updateTeamsDisplay(interaction: any, guildId: string) {
 
   embed.addFields({
     name: "État des équipes",
-    value: teamStatus || "Aucune équipe sélectionnée",
+    value: teamStatus,
     inline: false,
   });
 
@@ -634,15 +802,14 @@ async function updateTeamsDisplay(interaction: any, guildId: string) {
 }
 
 export async function showPrematchConfig(interaction: any, guildSettings: any) {
-  const prematchEnabled =
-    (guildSettings as any)?.enablePreMatchNotifications || false;
+  const prematchEnabled = guildSettings?.enablePreMatchNotifications || false;
 
   const embed = new EmbedBuilder()
     .setTitle("🔔 Configuration des Notifications Avant-Match")
     .setDescription(
       "Les notifications d'avant-match sont envoyées 30 minutes avant chaque match.\n\n" +
-        "**État actuel :** " +
-        (prematchEnabled ? "✅ Activé" : "❌ Désactivé")
+      "**État actuel :** " +
+      (prematchEnabled ? "✅ Activé" : "❌ Désactivé")
     )
     .setColor(prematchEnabled ? 0x00ff00 : 0xff0000);
 
@@ -673,15 +840,7 @@ export async function handlePrematchToggle(
 ) {
   try {
     await interaction.deferUpdate();
-  } catch (error: any) {
-    if (
-      error.code === 10062 ||
-      error.message?.includes("Unknown interaction")
-    ) {
-      logger.warn("Interaction expired during prematch toggle, skipping");
-      return;
-    }
-    logger.error("Error deferring prematch toggle update:", error);
+  } catch {
     return;
   }
 
@@ -692,46 +851,29 @@ export async function handlePrematchToggle(
 
   const embed = new EmbedBuilder()
     .setColor(enabled ? "#00ff00" : "#ff0000")
-    .setTitle("🔔 Configuration des notifications d'avant match")
+    .setTitle("🔔 Notifications avant-match")
     .setDescription(
       enabled
         ? "✅ Les notifications d'avant match sont maintenant **activées**"
         : "❌ Les notifications d'avant match sont maintenant **désactivées**"
     )
-    .addFields({
-      name: "📋 Détails",
-      value: enabled
-        ? "• Les notifications seront envoyées 30 minutes avant chaque match"
-        : "• Aucune notification ne sera envoyée 30 minutes avant les matchs\n• Les autres notifications restent actives",
-    })
-    .setTimestamp()
-    .setFooter({
-      text: `Configuré par ${interaction.user.tag}`,
-      iconURL: interaction.user.displayAvatarURL(),
-    });
+    .setTimestamp();
 
   await safeInteractionUpdate(interaction, {
     embeds: [embed],
     components: [createActionRow([createBackButton()])],
   });
-
-  logger.info(
-    `Guild ${guildId} ${
-      enabled ? "enabled" : "disabled"
-    } pre-match notifications`
-  );
 }
 
 export async function showScoreConfig(interaction: any, guildSettings: any) {
-  const scoreEnabled =
-    (guildSettings as any)?.enableScoreNotifications === true;
+  const scoreEnabled = guildSettings?.enableScoreNotifications === true;
 
   const embed = new EmbedBuilder()
     .setTitle("🏆 Configuration des Notifications de Score")
     .setDescription(
-      "Les notifications de score sont envoyées à la fin de chaque match avec le résultat.\n\n" +
-        "**État actuel :** " +
-        (scoreEnabled ? "✅ Activé" : "❌ Désactivé")
+      "Les notifications de score sont envoyées à la fin de chaque match.\n\n" +
+      "**État actuel :** " +
+      (scoreEnabled ? "✅ Activé" : "❌ Désactivé")
     )
     .setColor(scoreEnabled ? 0x00ff00 : 0xff0000);
 
@@ -762,15 +904,7 @@ export async function handleScoreToggle(
 ) {
   try {
     await interaction.deferUpdate();
-  } catch (error: any) {
-    if (
-      error.code === 10062 ||
-      error.message?.includes("Unknown interaction")
-    ) {
-      logger.warn("Interaction expired during score toggle, skipping");
-      return;
-    }
-    logger.error("Error deferring score toggle update:", error);
+  } catch {
     return;
   }
 
@@ -781,44 +915,29 @@ export async function handleScoreToggle(
 
   const embed = new EmbedBuilder()
     .setColor(enabled ? "#00ff00" : "#ff0000")
-    .setTitle("🏆 Configuration des notifications de score")
+    .setTitle("🏆 Notifications de score")
     .setDescription(
       enabled
         ? "✅ Les notifications de score sont maintenant **activées**"
         : "❌ Les notifications de score sont maintenant **désactivées**"
     )
-    .addFields({
-      name: "📋 Détails",
-      value: enabled
-        ? "• Les notifications seront envoyées à la fin de chaque match avec le score"
-        : "• Aucune notification ne sera envoyée à la fin des matchs\n• Les autres notifications restent actives",
-    })
-    .setTimestamp()
-    .setFooter({
-      text: `Configuré par ${interaction.user.tag}`,
-      iconURL: interaction.user.displayAvatarURL(),
-    });
+    .setTimestamp();
 
   await safeInteractionUpdate(interaction, {
     embeds: [embed],
     components: [createActionRow([createBackButton()])],
   });
-
-  logger.info(
-    `Guild ${guildId} ${enabled ? "enabled" : "disabled"} score notifications`
-  );
 }
 
 export async function showUpdateConfig(interaction: any, guildSettings: any) {
-  const updateEnabled =
-    (guildSettings as any)?.enableUpdateNotifications !== false;
+  const updateEnabled = guildSettings?.enableUpdateNotifications !== false;
 
   const embed = new EmbedBuilder()
     .setTitle("📢 Configuration des Notifications de Mise à Jour")
     .setDescription(
-      "Les notifications de mise à jour sont envoyées lors de changements du bot (nouvelles fonctionnalités, corrections, etc.).\n\n" +
-        "**État actuel :** " +
-        (updateEnabled ? "✅ Activé" : "❌ Désactivé")
+      "Les notifications de mise à jour sont envoyées lors de changements du bot.\n\n" +
+      "**État actuel :** " +
+      (updateEnabled ? "✅ Activé" : "❌ Désactivé")
     )
     .setColor(updateEnabled ? 0x00ff00 : 0xff0000);
 
@@ -849,15 +968,7 @@ export async function handleUpdateToggle(
 ) {
   try {
     await interaction.deferUpdate();
-  } catch (error: any) {
-    if (
-      error.code === 10062 ||
-      error.message?.includes("Unknown interaction")
-    ) {
-      logger.warn("Interaction expired during update toggle, skipping");
-      return;
-    }
-    logger.error("Error deferring update toggle update:", error);
+  } catch {
     return;
   }
 
@@ -868,44 +979,29 @@ export async function handleUpdateToggle(
 
   const embed = new EmbedBuilder()
     .setColor(enabled ? "#00ff00" : "#ff0000")
-    .setTitle("📢 Configuration des notifications de mise à jour")
+    .setTitle("📢 Notifications de mise à jour")
     .setDescription(
       enabled
         ? "✅ Les notifications de mise à jour sont maintenant **activées**"
         : "❌ Les notifications de mise à jour sont maintenant **désactivées**"
     )
-    .addFields({
-      name: "📋 Détails",
-      value: enabled
-        ? "• Les notifications seront envoyées lors de mises à jour du bot"
-        : "• Aucune notification de mise à jour ne sera envoyée\n• Les autres notifications restent actives",
-    })
-    .setTimestamp()
-    .setFooter({
-      text: `Configuré par ${interaction.user.tag}`,
-      iconURL: interaction.user.displayAvatarURL(),
-    });
+    .setTimestamp();
 
   await safeInteractionUpdate(interaction, {
     embeds: [embed],
     components: [createActionRow([createBackButton()])],
   });
-
-  logger.info(
-    `Guild ${guildId} ${enabled ? "enabled" : "disabled"} update notifications`
-  );
 }
 
 export async function showTwitchConfig(interaction: any, guildSettings: any) {
-  const twitchEnabled =
-    (guildSettings as any)?.enableTwitchNotifications !== false;
+  const twitchEnabled = guildSettings?.enableTwitchNotifications !== false;
 
   const embed = new EmbedBuilder()
-    .setTitle("🔴 Configuration des Notifications de Stream Twitch")
+    .setTitle("🔴 Configuration des Notifications Twitch")
     .setDescription(
-      "Les notifications de stream Twitch sont envoyées lorsqu'un joueur de Karmine Corp commence à streamer.\n\n" +
-        "**État actuel :** " +
-        (twitchEnabled ? "✅ Activé" : "❌ Désactivé")
+      "Les notifications Twitch sont envoyées lorsqu'un joueur KC commence à streamer.\n\n" +
+      "**État actuel :** " +
+      (twitchEnabled ? "✅ Activé" : "❌ Désactivé")
     )
     .setColor(twitchEnabled ? 0x00ff00 : 0xff0000);
 
@@ -936,15 +1032,7 @@ export async function handleTwitchToggle(
 ) {
   try {
     await interaction.deferUpdate();
-  } catch (error: any) {
-    if (
-      error.code === 10062 ||
-      error.message?.includes("Unknown interaction")
-    ) {
-      logger.warn("Interaction expired during twitch toggle, skipping");
-      return;
-    }
-    logger.error("Error deferring twitch toggle update:", error);
+  } catch {
     return;
   }
 
@@ -955,30 +1043,20 @@ export async function handleTwitchToggle(
 
   const embed = new EmbedBuilder()
     .setColor(enabled ? "#00ff00" : "#ff0000")
-    .setTitle("🔴 Configuration des notifications de stream Twitch")
+    .setTitle("🔴 Notifications Twitch")
     .setDescription(
       enabled
-        ? "✅ Les notifications de stream Twitch sont maintenant **activées**"
-        : "❌ Les notifications de stream Twitch sont maintenant **désactivées**"
+        ? "✅ Les notifications Twitch sont maintenant **activées**"
+        : "❌ Les notifications Twitch sont maintenant **désactivées**"
     )
-    .addFields({
-      name: "📋 Détails",
-      value: enabled
-        ? "• Les notifications seront envoyées lorsqu'un joueur de Karmine Corp commence à streamer sur Twitch"
-        : "• Aucune notification de stream Twitch ne sera envoyée\n• Les autres notifications restent actives",
-    })
-    .setTimestamp()
-    .setFooter({
-      text: `Configuré par ${interaction.user.tag}`,
-      iconURL: interaction.user.displayAvatarURL(),
-    });
+    .setTimestamp();
 
   await safeInteractionUpdate(interaction, {
     embeds: [embed],
     components: [createActionRow([createBackButton()])],
   });
-
-  logger.info(
-    `Guild ${guildId} ${enabled ? "enabled" : "disabled"} twitch notifications`
-  );
 }
+
+export function handleRoleSelection() { }
+export function handleRolesConfirmation() { }
+export function handleRolesClear() { }
