@@ -42,8 +42,7 @@ export async function execute(interaction: CommandInteraction) {
     const modal = new ModalBuilder()
       .setCustomId(`ticket_modal_${ticketType}`)
       .setTitle(
-        `${ticketType === "BUG" ? "🐛" : "💡"} Nouveau ticket - ${
-          ticketType === "BUG" ? "Bug" : "Amélioration"
+        `${ticketType === "BUG" ? "🐛" : "💡"} Nouveau ticket - ${ticketType === "BUG" ? "Bug" : "Amélioration"
         }`
       );
 
@@ -118,8 +117,8 @@ export async function handleTicketModalSubmit(interaction: any) {
     );
 
     // Send DM to admin user about new ticket
-    const adminUserId = process.env.DISCORD_USER_ID;
-    if (adminUserId) {
+    const adminUserIds = process.env.DISCORD_USER_ID?.split(",").map((id) => id.trim()).filter(Boolean) || [];
+    if (adminUserIds.length > 0) {
       try {
         if (!client.isReady()) {
           await new Promise<void>((resolve, reject) => {
@@ -134,7 +133,6 @@ export async function handleTicketModalSubmit(interaction: any) {
           });
         }
 
-        const adminUser = await client.users.fetch(adminUserId);
         const adminEmbed = new EmbedBuilder()
           .setColor(ticketType === "BUG" ? "#ff6b6b" : "#4ecdc4")
           .setTitle(`🎫 Nouveau ticket créé`)
@@ -171,13 +169,20 @@ export async function handleTicketModalSubmit(interaction: any) {
           .setTimestamp()
           .setFooter({ text: `Ticket créé par ${username}` });
 
-        await adminUser.send({ embeds: [adminEmbed] });
-        logger.info(`Sent ticket notification to admin user ${adminUserId}`);
-      } catch (adminDmError) {
-        logger.error(
-          `Could not send DM to admin user ${adminUserId}:`,
-          adminDmError
-        );
+        for (const adminUserId of adminUserIds) {
+          try {
+            const adminUser = await client.users.fetch(adminUserId);
+            await adminUser.send({ embeds: [adminEmbed] });
+            logger.info(`Sent ticket notification to admin user ${adminUserId}`);
+          } catch (adminDmError) {
+            logger.error(
+              `Could not send DM to admin user ${adminUserId}:`,
+              adminDmError
+            );
+          }
+        }
+      } catch (error) {
+        logger.error("Error sending ticket notifications to admins:", error);
       }
     }
 

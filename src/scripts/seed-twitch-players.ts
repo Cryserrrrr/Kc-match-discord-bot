@@ -96,12 +96,6 @@ const PLAYERS: PlayerData[] = [
     teamName: TEAM_NAMES[TEAM_IDS.LOL.KCBS as keyof typeof TEAM_NAMES],
   },
   {
-    twitchLogin: "theocacs",
-    playerName: "Theocacs",
-    teamId: TEAM_IDS.LOL.KCBS,
-    teamName: TEAM_NAMES[TEAM_IDS.LOL.KCBS as keyof typeof TEAM_NAMES],
-  },
-  {
     twitchLogin: "suygetsu",
     playerName: "SUYGETSU",
     teamId: TEAM_IDS.VAL.KC,
