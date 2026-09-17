@@ -1,33 +1,84 @@
 import { SlashCommandBuilder, EmbedBuilder } from "discord.js";
-import { PrismaClient } from "@prisma/client";
+import { prisma } from "../db";
 import { TitleManager } from "../utils/titleManager";
-
-const prisma = new PrismaClient();
+import { getDayKey, startOfDayInTimezone } from "../utils/dateUtils";
 
 export const data = new SlashCommandBuilder()
   .setName("daily")
   .setDescription("Récupérer votre récompense quotidienne de Perticoin");
 
+const BASE_REWARD = 200;
+const STREAK_BONUS = 50;
+const MAX_STREAK_BONUS_DAYS = 6;
+
 export async function execute(interaction: any) {
   try {
     const userId = interaction.user.id;
     const username = interaction.user.username;
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
+    // Daily reset happens at midnight Europe/Paris, whatever the server timezone
+    const today = startOfDayInTimezone(new Date());
 
-    const existingReward = await prisma.dailyReward.findFirst({
-      where: {
-        userId: userId,
-        claimedAt: {
-          gte: today,
-        },
-      },
+    const outcome = await prisma.$transaction(async (tx) => {
+      // Serialize concurrent /daily calls for the same user
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`daily:${userId}`}))`;
+
+      const existingReward = await tx.dailyReward.findFirst({
+        where: { userId, claimedAt: { gte: today } },
+      });
+      if (existingReward) {
+        return { claimed: false as const };
+      }
+
+      await tx.user.upsert({
+        where: { id: userId },
+        update: {},
+        create: { id: userId, username, points: 1000 },
+      });
+
+      const recentRewards = await tx.dailyReward.findMany({
+        where: { userId },
+        orderBy: { claimedAt: "desc" },
+        take: 30,
+      });
+
+      // Count consecutive previous days (Paris calendar) with a claim
+      let streak = 0;
+      let expected = startOfDayInTimezone(
+        new Date(today.getTime() - 12 * 60 * 60 * 1000)
+      );
+      const claimedDays = new Set(
+        recentRewards.map((r) => getDayKey(r.claimedAt))
+      );
+      while (claimedDays.has(getDayKey(expected))) {
+        streak++;
+        expected = startOfDayInTimezone(
+          new Date(expected.getTime() - 12 * 60 * 60 * 1000)
+        );
+      }
+      const currentStreak = Math.min(streak, MAX_STREAK_BONUS_DAYS);
+      const rewardAmount = BASE_REWARD + currentStreak * STREAK_BONUS;
+
+      await tx.dailyReward.create({
+        data: { userId, amount: rewardAmount },
+      });
+      const user = await tx.user.update({
+        where: { id: userId },
+        data: { points: { increment: rewardAmount } },
+      });
+
+      return {
+        claimed: true as const,
+        rewardAmount,
+        currentStreak,
+        newBalance: user.points,
+      };
     });
 
-    if (existingReward) {
-      const nextDay = new Date(today);
-      nextDay.setDate(nextDay.getDate() + 1);
-      const timeUntilNext = nextDay.getTime() - Date.now();
+    if (!outcome.claimed) {
+      const nextDay = startOfDayInTimezone(
+        new Date(today.getTime() + 36 * 60 * 60 * 1000)
+      );
+      const timeUntilNext = Math.max(0, nextDay.getTime() - Date.now());
       const hours = Math.floor(timeUntilNext / (1000 * 60 * 60));
       const minutes = Math.floor(
         (timeUntilNext % (1000 * 60 * 60)) / (1000 * 60)
@@ -50,85 +101,17 @@ export async function execute(interaction: any) {
       return;
     }
 
-    let user = await prisma.user.findUnique({
-      where: { id: userId },
-    });
+    const { rewardAmount, currentStreak, newBalance } = outcome;
 
-    if (!user) {
-      user = await prisma.user.create({
-        data: {
-          id: userId,
-          username: username,
-          points: 1000,
-        },
-      });
+    let titleUnlocked = false;
+    try {
+      titleUnlocked = await TitleManager.unlockFirstDailyTitle(
+        userId,
+        interaction.client
+      );
+    } catch (error) {
+      console.error("Error unlocking daily title:", error);
     }
-
-    const yesterday = new Date(today);
-    yesterday.setDate(yesterday.getDate() - 1);
-
-    const yesterdayReward = await prisma.dailyReward.findFirst({
-      where: {
-        userId: userId,
-        claimedAt: {
-          gte: yesterday,
-          lt: today,
-        },
-      },
-    });
-
-    const baseReward = 200;
-    const streakBonus = 50;
-    let currentStreak = 0;
-
-    if (yesterdayReward) {
-      const recentRewards = await prisma.dailyReward.findMany({
-        where: {
-          userId: userId,
-        },
-        orderBy: {
-          claimedAt: "desc",
-        },
-        take: 30,
-      });
-
-      let streak = 0;
-      let currentDate = new Date(today);
-      currentDate.setDate(currentDate.getDate() - 1);
-
-      for (const reward of recentRewards) {
-        const rewardDate = new Date(reward.claimedAt);
-        rewardDate.setHours(0, 0, 0, 0);
-
-        if (rewardDate.getTime() === currentDate.getTime()) {
-          streak++;
-          currentDate.setDate(currentDate.getDate() - 1);
-        } else {
-          break;
-        }
-      }
-
-      currentStreak = Math.min(streak, 6);
-    }
-
-    const rewardAmount = baseReward + currentStreak * streakBonus;
-
-    await prisma.dailyReward.create({
-      data: {
-        userId: userId,
-        amount: rewardAmount,
-      },
-    });
-
-    await prisma.user.update({
-      where: { id: userId },
-      data: { points: user.points + rewardAmount },
-    });
-
-    const titleUnlocked = await TitleManager.unlockFirstDailyTitle(
-      userId,
-      interaction.client
-    );
     try {
       if (currentStreak + 1 >= 7) {
         await TitleManager.unlockDailyMaxStreak(userId, interaction.client);
@@ -147,7 +130,7 @@ export async function execute(interaction: any) {
         },
         {
           name: "Nouveau Solde",
-          value: `${user.points + rewardAmount} Perticoins`,
+          value: `${newBalance} Perticoins`,
           inline: true,
         }
       )

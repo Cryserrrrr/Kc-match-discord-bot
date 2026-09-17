@@ -97,6 +97,8 @@ model Ticket {
   status      TicketStatus @default(OPEN) // Ticket status
   description String? // Optional description
   answer      String? // Response to the request
+  notifyOnAnswer Boolean  @default(false) // DM the user when an answer is posted
+  notifiedAnswer String? // Last answer sent to the user by DM
   createdAt   DateTime     @default(now())
   updatedAt   DateTime     @updatedAt
 

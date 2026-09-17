@@ -1,7 +1,5 @@
-import { PrismaClient } from "@prisma/client";
+import { prisma } from "../db";
 import { logger } from "./logger";
-
-const prisma = new PrismaClient();
 
 function clamp(value: number, min: number, max: number): number {
   return Math.max(min, Math.min(max, value));
@@ -75,8 +73,15 @@ export async function calculateBaseOddsFromHistory(
 }
 
 export function getPossibleScores(numberOfGames: number): string[] {
-  const maxWins = Math.ceil(numberOfGames / 2);
   const possibleScores: string[] = [];
+  // Even series (Bo2...) play every game, so draws like 1-1 are possible
+  if (numberOfGames > 0 && numberOfGames % 2 === 0) {
+    for (let kcWins = numberOfGames; kcWins >= 0; kcWins--) {
+      possibleScores.push(`${kcWins}-${numberOfGames - kcWins}`);
+    }
+    return possibleScores;
+  }
+  const maxWins = Math.ceil(numberOfGames / 2);
   for (let kcWins = 0; kcWins <= maxWins; kcWins++) {
     for (let opponentWins = 0; opponentWins <= maxWins; opponentWins++) {
       if (

@@ -8,7 +8,7 @@ import {
   TextInputBuilder,
   TextInputStyle,
 } from "discord.js";
-import { prisma } from "../index";
+import { prisma } from "../db";
 import { logger } from "../utils/logger";
 import { TournamentUtils } from "../utils/tournamentUtils";
 import { TitleManager } from "../utils/titleManager";
@@ -63,24 +63,28 @@ export const data = new SlashCommandBuilder()
 export async function execute(interaction: any) {
   try {
     const sub = interaction.options.getSubcommand();
-    if (sub === "create") return handleCreate(interaction);
-    if (sub === "set_end") return handleSetEnd(interaction);
-    if (sub === "stop") return handleStop(interaction);
-    return handleStats(interaction);
+    if (sub === "create") return await handleCreate(interaction);
+    if (sub === "set_end") return await handleSetEnd(interaction);
+    if (sub === "stop") return await handleStop(interaction);
+    return await handleStats(interaction);
   } catch (error) {
     logger.error("Error in tournament command:", error);
-    await interaction.editReply({
-      content: "Erreur tournoi.",
-      ephemeral: true,
-    });
+    try {
+      if (interaction.deferred || interaction.replied) {
+        await interaction.editReply({ content: "Erreur tournoi." });
+      } else {
+        await interaction.reply({ content: "Erreur tournoi.", ephemeral: true });
+      }
+    } catch {}
   }
 }
 
 const pendingCreateSessions = new Map<string, { name: string }>();
 
 async function handleCreate(interaction: any) {
+  // /tournament create is not deferred (it opens a modal), so reply directly
   if (!isAdmin(interaction)) {
-    await interaction.editReply({
+    await interaction.reply({
       content: "Permission requise.",
       ephemeral: true,
     });
@@ -88,9 +92,11 @@ async function handleCreate(interaction: any) {
   }
   const name = interaction.options.getString("nom");
 
+  // Modal titles are limited to 45 characters
+  const title = `Créer ${name}`;
   const modal = new ModalBuilder()
     .setCustomId(`tournament_create_modal`)
-    .setTitle(`Créer ${name}`);
+    .setTitle(title.length > 45 ? title.substring(0, 42) + "..." : title);
 
   const regInput = new TextInputBuilder()
     .setCustomId("reg_minutes")
@@ -140,6 +146,13 @@ async function handleSetEnd(interaction: any) {
   }
   const guildId = interaction.guildId!;
   const days = interaction.options.getInteger("jours");
+  if (!days || days <= 0) {
+    await interaction.editReply({
+      content: "Le nombre de jours doit être supérieur à 0.",
+      ephemeral: true,
+    });
+    return;
+  }
   const t = await tutils.getCurrentOrMostRecentTournament(guildId);
   if (!t) {
     await interaction.editReply({

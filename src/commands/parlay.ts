@@ -6,7 +6,7 @@ import {
   ButtonStyle,
   StringSelectMenuBuilder,
 } from "discord.js";
-import { prisma } from "../index";
+import { prisma } from "../db";
 import { logger } from "../utils/logger";
 import {
   getTeamOddsForMatch,
@@ -16,6 +16,14 @@ import {
 import { TitleManager } from "../utils/titleManager";
 import { formatDateTime } from "../utils/dateUtils";
 import { sendParlayAnnouncement } from "../utils/betAnnouncement";
+import {
+  assertMatchOpenForBetting,
+  BettingClosedError,
+  debitPoints,
+  InsufficientFundsError,
+  MIN_STAKE,
+  parseStake,
+} from "../utils/wallet";
 
 type ParlayLeg = {
   matchId: string;
@@ -39,11 +47,11 @@ export const data = new SlashCommandBuilder()
 export async function execute(interaction: any) {
   try {
     const userId = interaction.user.id;
-    const amount = interaction.options.getInteger("montant");
+    const amount = parseStake(interaction.options.getInteger("montant"));
 
-    if (amount < 25) {
+    if (amount === null) {
       await interaction.editReply({
-        content: "La mise minimum est de 25 Perticoin.",
+        content: `La mise minimum est de ${MIN_STAKE} Perticoin.`,
         ephemeral: true,
       });
       return;
@@ -150,6 +158,31 @@ async function updateParlayEmbed(interaction: any, userId: string) {
   }
 }
 
+async function getSelectableMatches(session: { legs: ParlayLeg[] }) {
+  const usedMatchIds = session.legs.map((l) => l.matchId);
+  return prisma.match.findMany({
+    where: {
+      status: "not_started",
+      beginAt: { gt: new Date() },
+      id: { notIn: usedMatchIds },
+    },
+    orderBy: { beginAt: "asc" },
+    take: 10,
+  });
+}
+
+async function showNoMatchAvailable(interaction: any, userId: string) {
+  const session = activeParlaySessions.get(userId);
+  if (!session) return;
+  const embed = buildParlayEmbed(session).setFooter({
+    text: "Aucun autre match à venir disponible pour ce parlay.",
+  });
+  await interaction.update({
+    embeds: [embed],
+    components: buildMainRows(userId),
+  });
+}
+
 export async function handleParlayAddTeam(interaction: any) {
   const userId = interaction.user.id;
   const session = activeParlaySessions.get(userId);
@@ -160,11 +193,10 @@ export async function handleParlayAddTeam(interaction: any) {
       embeds: [],
     });
 
-  const upcoming = await prisma.match.findMany({
-    where: { status: "not_started", beginAt: { gt: new Date() } },
-    orderBy: { beginAt: "asc" },
-    take: 10,
-  });
+  const upcoming = await getSelectableMatches(session);
+  if (upcoming.length === 0) {
+    return showNoMatchAvailable(interaction, userId);
+  }
   const options = upcoming.map((m) => ({
     label: `${m.kcTeam} vs ${m.opponent}`,
     value: m.id,
@@ -185,6 +217,12 @@ export async function handleParlayAddTeam(interaction: any) {
 }
 
 export async function handleParlayTeamMatchSelect(interaction: any) {
+  if (!activeParlaySessions.has(interaction.user.id))
+    return interaction.update({
+      content: "Session expirée.",
+      components: [],
+      embeds: [],
+    });
   const matchId = interaction.values[0];
   const { match, dyn } = await getTeamOddsForMatch(matchId);
   const options = [
@@ -224,16 +262,26 @@ export async function handleParlayTeamPick(interaction: any) {
     });
   const [matchId, team, oddsStr] = interaction.values[0].split("::");
   const odds = parseFloat(oddsStr);
+  if (session.legs.some((l) => l.matchId === matchId)) {
+    return updateParlayEmbed(interaction, userId);
+  }
   session.legs.push({ matchId, type: "TEAM", selection: team, odds });
   await updateParlayEmbed(interaction, userId);
 }
 
 export async function handleParlayAddScore(interaction: any) {
-  const upcoming = await prisma.match.findMany({
-    where: { status: "not_started", beginAt: { gt: new Date() } },
-    orderBy: { beginAt: "asc" },
-    take: 10,
-  });
+  const userId = interaction.user.id;
+  const session = activeParlaySessions.get(userId);
+  if (!session)
+    return interaction.update({
+      content: "Session expirée.",
+      components: [],
+      embeds: [],
+    });
+  const upcoming = await getSelectableMatches(session);
+  if (upcoming.length === 0) {
+    return showNoMatchAvailable(interaction, userId);
+  }
   const options = upcoming.map((m) => ({
     label: `${m.kcTeam} vs ${m.opponent}`,
     value: m.id,
@@ -254,6 +302,12 @@ export async function handleParlayAddScore(interaction: any) {
 }
 
 export async function handleParlayScoreMatchSelect(interaction: any) {
+  if (!activeParlaySessions.has(interaction.user.id))
+    return interaction.update({
+      content: "Session expirée.",
+      components: [],
+      embeds: [],
+    });
   const matchId = interaction.values[0];
   const { match, scoreOdds } = await getScoreOddsForMatch(matchId);
   const entries = Object.entries(scoreOdds).sort((a, b) =>
@@ -289,14 +343,17 @@ export async function handleParlayScorePick(interaction: any) {
     });
   const [matchId, score, oddsStr] = interaction.values[0].split("::");
   const odds = parseFloat(oddsStr);
+  if (session.legs.some((l) => l.matchId === matchId)) {
+    return updateParlayEmbed(interaction, userId);
+  }
   session.legs.push({ matchId, type: "SCORE", selection: score, odds });
   await updateParlayEmbed(interaction, userId);
 }
 
 export async function handleParlayConfirm(interaction: any) {
+  const userId = interaction.user.id;
+  const session = activeParlaySessions.get(userId);
   try {
-    const userId = interaction.user.id;
-    const session = activeParlaySessions.get(userId);
     if (!session || session.legs.length < 2) {
       await interaction.update({
         content: "Ajoutez au moins 2 sélections.",
@@ -305,51 +362,86 @@ export async function handleParlayConfirm(interaction: any) {
       });
       return;
     }
-    if (session.amount < 25) {
+    if (session.amount < MIN_STAKE) {
       await interaction.update({
-        content: "La mise minimum est de 25 Perticoin.",
+        content: `La mise minimum est de ${MIN_STAKE} Perticoin.`,
         components: [],
         embeds: [],
       });
       return;
     }
-    const user = await prisma.user.findUnique({ where: { id: userId } });
-    if (!user || user.points < session.amount) {
+    const uniqueMatchIds = new Set(session.legs.map((l) => l.matchId));
+    if (uniqueMatchIds.size !== session.legs.length) {
       await interaction.update({
-        content: `Fonds insuffisants. Solde: ${user?.points || 0}`,
+        content: "Un parlay ne peut contenir qu'une sélection par match.",
         components: [],
         embeds: [],
       });
+      activeParlaySessions.delete(userId);
       return;
     }
-    const totalOdds = multiplyOdds(session.legs.map((l) => l.odds));
-    const parlay = await prisma.parlay.create({
-      data: {
-        guildId: interaction.guildId,
-        userId,
-        amount: session.amount,
-        totalOdds,
-        legs: {
-          create: session.legs.map((l) => ({
-            matchId: l.matchId,
-            type: l.type,
-            selection: l.selection,
-            odds: l.odds,
-          })),
-        },
-      } as any,
-      include: { legs: true },
-    });
-    await prisma.user.update({
-      where: { id: userId },
-      data: { points: user.points - session.amount },
-    });
 
-    const titleUnlocked = await TitleManager.unlockFirstParlayTitle(
-      userId,
-      interaction.client
-    );
+    // Claim the session so a double click cannot create the parlay twice
     activeParlaySessions.delete(userId);
+    await interaction.deferUpdate();
+
+    const totalOdds = multiplyOdds(session.legs.map((l) => l.odds));
+    let parlay;
+    try {
+      parlay = await prisma.$transaction(async (tx) => {
+        for (const matchId of uniqueMatchIds) {
+          await assertMatchOpenForBetting(tx, matchId);
+        }
+        await debitPoints(tx, userId, session.amount);
+        return tx.parlay.create({
+          data: {
+            guildId: interaction.guildId || "",
+            userId,
+            amount: session.amount,
+            totalOdds,
+            legs: {
+              create: session.legs.map((l) => ({
+                matchId: l.matchId,
+                type: l.type,
+                selection: l.selection,
+                odds: l.odds,
+              })),
+            },
+          },
+          include: { legs: true },
+        });
+      });
+    } catch (error) {
+      if (error instanceof InsufficientFundsError) {
+        const user = await prisma.user.findUnique({ where: { id: userId } });
+        await interaction.editReply({
+          content: `Fonds insuffisants. Solde: ${user?.points || 0}`,
+          components: [],
+          embeds: [],
+        });
+        return;
+      }
+      if (error instanceof BettingClosedError) {
+        await interaction.editReply({
+          content:
+            "Un des matchs de votre parlay a déjà commencé. Parlay annulé.",
+          components: [],
+          embeds: [],
+        });
+        return;
+      }
+      throw error;
+    }
+
+    let titleUnlocked = false;
+    try {
+      titleUnlocked = await TitleManager.unlockFirstParlayTitle(
+        userId,
+        interaction.client
+      );
+    } catch (error) {
+      logger.error("Error unlocking parlay title:", error);
+    }
     try {
       if (interaction.guildId) {
         const { TournamentUtils } = await import("../utils/tournamentUtils");
@@ -372,14 +464,7 @@ export async function handleParlayConfirm(interaction: any) {
         )}`
       )
       .addFields(
-        (
-          (parlay as any).legs as Array<{
-            type: string;
-            selection: string;
-            matchId: string;
-            odds: number;
-          }>
-        ).map((l, idx) => ({
+        parlay.legs.map((l, idx) => ({
           name: `${idx + 1}. ${l.type} - ${l.selection}`,
           value: `Match: ${l.matchId} | Cote: ${l.odds}x`,
           inline: false,
@@ -394,20 +479,31 @@ export async function handleParlayConfirm(interaction: any) {
         inline: false,
       });
     }
-    await interaction.update({ embeds: [embed], components: [] });
+    await interaction.editReply({ embeds: [embed], components: [] });
 
-    await sendParlayAnnouncement(interaction, {
-      amount: session.amount,
-      totalOdds: totalOdds,
-      legs: session.legs,
-    });
+    try {
+      await sendParlayAnnouncement(interaction, {
+        amount: session.amount,
+        totalOdds: totalOdds,
+        legs: session.legs,
+      });
+    } catch (error) {
+      logger.error("Error sending parlay announcement:", error);
+    }
   } catch (error) {
     logger.error("Error confirming parlay:", error);
-    await interaction.update({
+    const payload = {
       content: "Erreur lors de la création du parlay.",
       components: [],
       embeds: [],
-    });
+    };
+    try {
+      if (interaction.deferred || interaction.replied) {
+        await interaction.editReply(payload);
+      } else {
+        await interaction.update(payload);
+      }
+    } catch {}
   }
 }
 

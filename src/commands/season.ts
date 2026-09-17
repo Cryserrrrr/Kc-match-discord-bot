@@ -1,6 +1,6 @@
 import { SlashCommandBuilder } from "@discordjs/builders";
 import { EmbedBuilder } from "discord.js";
-import { prisma } from "../index";
+import { prisma } from "../db";
 import { logger } from "../utils/logger";
 import { formatDateTime } from "../utils/dateUtils";
 

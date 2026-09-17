@@ -49,7 +49,6 @@ async function getAllPastMatches(): Promise<PandaScoreMatch[]> {
     "136080",
     "130922",
     "132777",
-    "136165",
     "129570",
   ];
 

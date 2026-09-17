@@ -10,21 +10,30 @@ import {
 import { StatsManager } from "../utils/statsManager";
 import { logger } from "../utils/logger";
 import { handleInteractionError } from "../utils/retryUtils";
-import { client } from "../index";
 
-export const data = new SlashCommandBuilder()
-  .setName("ticket")
-  .setDescription("Créer un ticket de support (bug ou amélioration)")
-  .addStringOption((option: any) =>
-    option
-      .setName("type")
-      .setDescription("Type de ticket")
-      .setRequired(true)
-      .addChoices(
-        { name: "🐛 Bug", value: "BUG" },
-        { name: "💡 Amélioration", value: "IMPROVEMENT" }
-      )
-  );
+// Cast: chaining after addStringOption narrows the builder type and hides addBooleanOption
+export const data = (
+  new SlashCommandBuilder()
+    .setName("ticket")
+    .setDescription("Créer un ticket de support (bug ou amélioration)")
+    .addStringOption((option: any) =>
+      option
+        .setName("type")
+        .setDescription("Type de ticket")
+        .setRequired(true)
+        .addChoices(
+          { name: "🐛 Bug", value: "BUG" },
+          { name: "💡 Amélioration", value: "IMPROVEMENT" }
+        )
+    ) as any
+).addBooleanOption((option: any) =>
+  option
+    .setName("notification")
+    .setDescription(
+      "MP quand le support répond (oui par défaut). Vos MP doivent être ouverts."
+    )
+    .setRequired(false)
+);
 
 export async function execute(interaction: CommandInteraction) {
   const startTime = Date.now();
@@ -38,9 +47,11 @@ export async function execute(interaction: CommandInteraction) {
     const username = interaction.user.username;
 
     const effectiveGuildId = guildId || "DM";
+    const notifyOnAnswer =
+      (interaction as any).options?.getBoolean("notification") ?? true;
 
     const modal = new ModalBuilder()
-      .setCustomId(`ticket_modal_${ticketType}`)
+      .setCustomId(`ticket_modal_${ticketType}_${notifyOnAnswer ? "dm" : "nodm"}`)
       .setTitle(
         `${ticketType === "BUG" ? "🐛" : "💡"} Nouveau ticket - ${ticketType === "BUG" ? "Bug" : "Amélioration"
         }`
@@ -96,9 +107,12 @@ export async function execute(interaction: CommandInteraction) {
 
 export async function handleTicketModalSubmit(interaction: any) {
   try {
-    const ticketType = interaction.customId.split("_")[2] as
-      | "BUG"
-      | "IMPROVEMENT";
+    // Acknowledge within Discord's 3s window before any DB/DM work
+    await interaction.deferReply({ flags: 64 });
+
+    const [, , rawType, notifyFlag] = interaction.customId.split("_");
+    const ticketType = rawType as "BUG" | "IMPROVEMENT";
+    const notifyOnAnswer = notifyFlag === "dm";
     const description =
       interaction.fields.getTextInputValue("ticket_description");
 
@@ -113,26 +127,15 @@ export async function handleTicketModalSubmit(interaction: any) {
       userId,
       username,
       ticketType,
-      description
+      description,
+      notifyOnAnswer
     );
 
     // Send DM to admin user about new ticket
     const adminUserIds = process.env.DISCORD_USER_ID?.split(",").map((id) => id.trim()).filter(Boolean) || [];
     if (adminUserIds.length > 0) {
       try {
-        if (!client.isReady()) {
-          await new Promise<void>((resolve, reject) => {
-            const timeout = setTimeout(() => {
-              reject(new Error("Client ready timeout"));
-            }, 5000);
-
-            client.once("ready", () => {
-              clearTimeout(timeout);
-              resolve();
-            });
-          });
-        }
-
+        const client = interaction.client;
         const adminEmbed = new EmbedBuilder()
           .setColor(ticketType === "BUG" ? "#ff6b6b" : "#4ecdc4")
           .setTitle(`🎫 Nouveau ticket créé`)
@@ -169,18 +172,23 @@ export async function handleTicketModalSubmit(interaction: any) {
           .setTimestamp()
           .setFooter({ text: `Ticket créé par ${username}` });
 
-        for (const adminUserId of adminUserIds) {
-          try {
-            const adminUser = await client.users.fetch(adminUserId);
-            await adminUser.send({ embeds: [adminEmbed] });
-            logger.info(`Sent ticket notification to admin user ${adminUserId}`);
-          } catch (adminDmError) {
-            logger.error(
-              `Could not send DM to admin user ${adminUserId}:`,
-              adminDmError
-            );
+        // Fire-and-forget: admin DMs must not delay the user's response
+        void (async () => {
+          for (const adminUserId of adminUserIds) {
+            try {
+              const adminUser = await client.users.fetch(adminUserId);
+              await adminUser.send({ embeds: [adminEmbed] });
+              logger.info(
+                `Sent ticket notification to admin user ${adminUserId}`
+              );
+            } catch (adminDmError) {
+              logger.error(
+                `Could not send DM to admin user ${adminUserId}:`,
+                adminDmError
+              );
+            }
           }
-        }
+        })();
       } catch (error) {
         logger.error("Error sending ticket notifications to admins:", error);
       }
@@ -205,6 +213,12 @@ export async function handleTicketModalSubmit(interaction: any) {
         },
         { name: "Statut", value: "Ouvert", inline: true },
         {
+          name: "Notification",
+          value: notifyOnAnswer
+            ? "🔔 Vous recevrez un message privé dès que le support répondra.\n⚠️ Si vos messages privés sont fermés, le bot ne pourra pas vous l'envoyer et la notification sera annulée."
+            : "🔕 Pas de message privé à la réponse (voir `/mytickets`)",
+        },
+        {
           name: "Description",
           value:
             description.length > 1024
@@ -220,25 +234,32 @@ export async function handleTicketModalSubmit(interaction: any) {
         embeds: [embed],
       });
 
-      await interaction.reply({
+      await interaction.editReply({
         content:
           "✅ Votre ticket a été créé avec succès ! Une confirmation vous a été envoyée en message privé.",
-        flags: 64,
       });
     } catch (dmError) {
       logger.warn(`Could not send DM to user ${userId}:`, dmError);
 
-      await interaction.reply({
+      await interaction.editReply({
+        content: notifyOnAnswer
+          ? "⚠️ Vos messages privés semblent fermés : ouvrez-les pour recevoir la réponse du support, sinon la notification sera annulée."
+          : undefined,
         embeds: [embed],
-        flags: 64,
       });
     }
   } catch (error) {
     logger.error("Error handling ticket modal submit:", error);
-    await interaction.reply({
+    const errorResponse = {
       content:
         "❌ Une erreur s'est produite lors de la création du ticket. Veuillez réessayer.",
-      flags: 64,
-    });
+    };
+    try {
+      if (interaction.deferred || interaction.replied) {
+        await interaction.editReply(errorResponse);
+      } else {
+        await interaction.reply({ ...errorResponse, flags: 64 });
+      }
+    } catch {}
   }
 }

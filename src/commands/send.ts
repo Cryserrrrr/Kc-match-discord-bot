@@ -1,6 +1,6 @@
 import { SlashCommandBuilder } from "@discordjs/builders";
 import { EmbedBuilder, User, GuildMember } from "discord.js";
-import { prisma } from "../index";
+import { prisma } from "../db";
 import { logger } from "../utils/logger";
 import { ensureUser } from "../utils/bettingUtils";
 import { TitleManager } from "../utils/titleManager";

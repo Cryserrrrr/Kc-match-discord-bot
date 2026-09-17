@@ -10,10 +10,11 @@ import {
   TextInputStyle,
   User,
 } from "discord.js";
-import { prisma } from "../index";
+import { prisma } from "../db";
 import { logger } from "../utils/logger";
 import { TitleManager } from "../utils/titleManager";
 import { formatDateTime } from "../utils/dateUtils";
+import { isMatchOpenForBetting, MIN_STAKE, parseStake } from "../utils/wallet";
 
 const duelSessions = new Map<string, { amount: number }>();
 
@@ -75,12 +76,9 @@ export async function execute(interaction: any) {
         });
         return;
       }
-      await prisma.duel.update({
-        where: { id },
-        data: { status: "ACCEPTED" },
-      });
+      const acceptError = await acceptDuel(duel);
       await interaction.editReply({
-        content: `Duel ${id} accepté.`,
+        content: acceptError ?? `Duel ${id} accepté.`,
         ephemeral: true,
       });
       return;
@@ -102,10 +100,18 @@ export async function execute(interaction: any) {
         });
         return;
       }
-      await prisma.duel.update({
-        where: { id },
+      // Only a duel that has not been accepted yet can be cancelled
+      const cancelled = await prisma.duel.updateMany({
+        where: { id, status: "PENDING" },
         data: { status: "CANCELLED" },
       });
+      if (cancelled.count === 0) {
+        await interaction.editReply({
+          content: "Ce duel ne peut plus être annulé (déjà accepté ou terminé).",
+          ephemeral: true,
+        });
+        return;
+      }
       await interaction.editReply({
         content: `Duel ${id} annulé.`,
         ephemeral: true,
@@ -124,12 +130,20 @@ export async function execute(interaction: any) {
       return;
     }
 
+    if (opponent.bot) {
+      await interaction.editReply({
+        content: "Vous ne pouvez pas défier un bot.",
+        ephemeral: true,
+      });
+      return;
+    }
+
     await ensureUsersExist([interaction.user, opponent]);
 
     // Stash preset amount in a lightweight session
-    if (presetAmount && presetAmount < 25) {
+    if (presetAmount !== null && parseStake(presetAmount) === null) {
       await interaction.editReply({
-        content: "La mise minimum est de 25 Perticoin.",
+        content: `La mise minimum est de ${MIN_STAKE} Perticoin.`,
         ephemeral: true,
       });
       return;
@@ -190,6 +204,15 @@ export async function execute(interaction: any) {
       content: "Erreur de duel.",
       ephemeral: true,
     });
+  }
+}
+
+async function respond(interaction: any, payload: any) {
+  const { ephemeral, ...rest } = payload;
+  if (interaction.deferred || interaction.replied) {
+    await interaction.editReply(rest);
+  } else {
+    await interaction.reply({ ...rest, ephemeral: true });
   }
 }
 
@@ -326,21 +349,23 @@ export async function handleDuelTeamPick(interaction: any) {
 export async function handleDuelAmountSubmit(interaction: any) {
   try {
     const [, , matchId, team, opponentId] = interaction.customId.split("_");
-    const amount = parseInt(
+    const amount = parseStake(
       interaction.fields.getTextInputValue("duel_amount")
     );
 
-    if (isNaN(amount) || amount < 25) {
-      await interaction.reply({
-        content: "La mise minimum est de 25 Perticoin.",
+    if (amount === null) {
+      await respond(interaction, {
+        content: `La mise minimum est de ${MIN_STAKE} Perticoin.`,
         ephemeral: true,
       });
       return;
     }
 
+    await interaction.deferReply({ ephemeral: true });
+
     const match = await prisma.match.findUnique({ where: { id: matchId } });
-    if (!match || match.status !== "not_started") {
-      await interaction.reply({
+    if (!isMatchOpenForBetting(match)) {
+      await respond(interaction, {
         content: "Match non disponible pour duel.",
         ephemeral: true,
       });
@@ -353,7 +378,7 @@ export async function handleDuelAmountSubmit(interaction: any) {
       where: { id: challengerId },
     });
     if (!challenger || challenger.points < amount) {
-      await interaction.reply({
+      await respond(interaction, {
         content: `Fonds insuffisants. Vous avez ${
           challenger?.points || 0
         } Perticoin.`,
@@ -376,7 +401,7 @@ export async function handleDuelAmountSubmit(interaction: any) {
       team,
       opponentId,
       challengerId,
-      match,
+      match!,
       amount,
       interaction.guildId
     );
@@ -392,7 +417,7 @@ export async function handleDuelAmountSubmit(interaction: any) {
   } catch (error) {
     logger.error("Error in handleDuelAmountSubmit:", error);
     try {
-      await interaction.reply({
+      await respond(interaction, {
         content: "Erreur lors de la création du duel.",
         ephemeral: true,
       });
@@ -408,9 +433,11 @@ async function createDuelWithAmount(
   amount: number
 ) {
   try {
+    await interaction.deferReply({ ephemeral: true });
+
     const match = await prisma.match.findUnique({ where: { id: matchId } });
-    if (!match || match.status !== "not_started") {
-      await interaction.reply({
+    if (!isMatchOpenForBetting(match)) {
+      await respond(interaction, {
         content: "Match non disponible pour duel.",
         ephemeral: true,
       });
@@ -423,7 +450,7 @@ async function createDuelWithAmount(
       where: { id: challengerId },
     });
     if (!challenger || challenger.points < amount) {
-      await interaction.reply({
+      await respond(interaction, {
         content: `Fonds insuffisants. Vous avez ${
           challenger?.points || 0
         } Perticoin.`,
@@ -437,7 +464,7 @@ async function createDuelWithAmount(
       team,
       opponentId,
       challengerId,
-      match,
+      match!,
       amount,
       interaction.guildId
     );
@@ -453,7 +480,7 @@ async function createDuelWithAmount(
   } catch (error) {
     logger.error("Error in createDuelWithAmount:", error);
     try {
-      await interaction.reply({
+      await respond(interaction, {
         content: "Erreur lors de la création du duel.",
         ephemeral: true,
       });
@@ -524,7 +551,9 @@ async function sendDuelNotifications(
         inline: false,
       }
     )
-    .setFooter({ text: `Duel ID: ${duel.id}` })
+    .setFooter({
+      text: `Duel ID: ${duel.id} • Le perdant verse la mise au gagnant`,
+    })
     .setTimestamp();
 
   const acceptBtn = new ButtonBuilder()
@@ -566,7 +595,41 @@ async function sendDuelNotifications(
     )
     .setTimestamp();
 
-  await interaction.reply({ embeds: [confirmEmbed], ephemeral: true });
+  await respond(interaction, { embeds: [confirmEmbed], ephemeral: true });
+}
+
+/**
+ * Moves a duel from PENDING to ACCEPTED. Returns an error message for the user,
+ * or null on success. Stakes are settled at resolution (loser pays winner).
+ */
+async function acceptDuel(duel: any): Promise<string | null> {
+  if (duel.status !== "PENDING") {
+    return "Ce duel n'est plus disponible.";
+  }
+  const match = await prisma.match.findUnique({ where: { id: duel.matchId } });
+  if (!isMatchOpenForBetting(match)) {
+    return "Le match a déjà commencé, le duel ne peut plus être accepté.";
+  }
+  const [challenger, opponent] = await Promise.all([
+    prisma.user.findUnique({ where: { id: duel.challengerId } }),
+    prisma.user.findUnique({ where: { id: duel.opponentId } }),
+  ]);
+  if (!opponent || opponent.points < duel.amount) {
+    return `Fonds insuffisants pour accepter (${
+      opponent?.points || 0
+    } Perticoin).`;
+  }
+  if (!challenger || challenger.points < duel.amount) {
+    return "Le challenger n'a plus assez de Perticoin pour ce duel.";
+  }
+  const accepted = await prisma.duel.updateMany({
+    where: { id: duel.id, status: "PENDING" },
+    data: { status: "ACCEPTED" },
+  });
+  if (accepted.count === 0) {
+    return "Ce duel n'est plus disponible.";
+  }
+  return null;
 }
 
 export async function handleDuelAccept(interaction: any) {
@@ -585,36 +648,34 @@ export async function handleDuelAccept(interaction: any) {
       });
       return;
     }
-    const opponent = await prisma.user.findUnique({
-      where: { id: duel.opponentId },
-    });
-    if (!opponent || opponent.points < duel.amount) {
+    const acceptError = await acceptDuel(duel);
+    if (acceptError) {
       await interaction.reply({
-        content: `Fonds insuffisants pour accepter (${
-          opponent?.points || 0
-        } Perticoin).`,
+        content: acceptError,
       });
       return;
     }
-    await prisma.duel.update({
-      where: { id: duelId },
-      data: { status: "ACCEPTED" },
-    });
-
-    const opponentTitleUnlocked = await TitleManager.unlockFirstDuelTitle(
-      duel.opponentId,
-      interaction.client
-    );
-    const challengerTitleUnlocked = await TitleManager.unlockFirstDuelTitle(
-      duel.challengerId,
-      interaction.client
-    );
 
     await interaction.update({
       content: "Duel accepté ✅",
       embeds: [],
       components: [],
     });
+
+    let opponentTitleUnlocked = false;
+    let challengerTitleUnlocked = false;
+    try {
+      opponentTitleUnlocked = await TitleManager.unlockFirstDuelTitle(
+        duel.opponentId,
+        interaction.client
+      );
+      challengerTitleUnlocked = await TitleManager.unlockFirstDuelTitle(
+        duel.challengerId,
+        interaction.client
+      );
+    } catch (e) {
+      logger.warn("Unable to unlock duel titles:", e);
+    }
 
     if (opponentTitleUnlocked) {
       try {
@@ -672,10 +733,16 @@ export async function handleDuelReject(interaction: any) {
       });
       return;
     }
-    await prisma.duel.update({
-      where: { id: duelId },
+    const rejected = await prisma.duel.updateMany({
+      where: { id: duelId, status: "PENDING" },
       data: { status: "CANCELLED" },
     });
+    if (rejected.count === 0) {
+      await interaction.reply({
+        content: "Ce duel n'est plus disponible.",
+      });
+      return;
+    }
     await interaction.update({
       content: "Duel refusé ❌",
       embeds: [],

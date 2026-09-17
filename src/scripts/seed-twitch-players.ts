@@ -16,7 +16,6 @@ const TEAM_IDS = {
   VAL: {
     KC: "130922",
     KCGC: "132777",
-    KCBS: "136165",
   },
   RL: {
     KC: "129570",
@@ -29,7 +28,6 @@ const TEAM_NAMES = {
   "136080": "KCBS LoL",
   "130922": "KC Valorant",
   "132777": "KCGC Valorant",
-  "136165": "KCBS Valorant",
   "129570": "KC Rocket League",
 };
 
@@ -78,12 +76,6 @@ const PLAYERS: PlayerData[] = [
     teamName: TEAM_NAMES[TEAM_IDS.LOL.KCB as keyof typeof TEAM_NAMES],
   },
   {
-    twitchLogin: "hazeltn",
-    playerName: "Hazel",
-    teamId: TEAM_IDS.LOL.KCB,
-    teamName: TEAM_NAMES[TEAM_IDS.LOL.KCB as keyof typeof TEAM_NAMES],
-  },
-  {
     twitchLogin: "prime_0p",
     playerName: "Prime",
     teamId: TEAM_IDS.LOL.KCB,
@@ -92,6 +84,18 @@ const PLAYERS: PlayerData[] = [
   {
     twitchLogin: "koalaa_lol",
     playerName: "Koala",
+    teamId: TEAM_IDS.LOL.KCBS,
+    teamName: TEAM_NAMES[TEAM_IDS.LOL.KCBS as keyof typeof TEAM_NAMES],
+  },
+  {
+    twitchLogin: "oleg_insec",
+    playerName: "Oleg",
+    teamId: TEAM_IDS.LOL.KCBS,
+    teamName: TEAM_NAMES[TEAM_IDS.LOL.KCBS as keyof typeof TEAM_NAMES],
+  },
+  {
+    twitchLogin: "gwen_nlol",
+    playerName: "Gwen",
     teamId: TEAM_IDS.LOL.KCBS,
     teamName: TEAM_NAMES[TEAM_IDS.LOL.KCBS as keyof typeof TEAM_NAMES],
   },
@@ -107,12 +111,7 @@ const PLAYERS: PlayerData[] = [
     teamId: TEAM_IDS.VAL.KC,
     teamName: TEAM_NAMES[TEAM_IDS.VAL.KC as keyof typeof TEAM_NAMES],
   },
-  {
-    twitchLogin: "sheydosvl",
-    playerName: "Sheydos",
-    teamId: TEAM_IDS.VAL.KC,
-    teamName: TEAM_NAMES[TEAM_IDS.VAL.KC as keyof typeof TEAM_NAMES],
-  },
+
   {
     twitchLogin: "dos9vlr",
     playerName: "dos9",
@@ -124,6 +123,42 @@ const PLAYERS: PlayerData[] = [
     playerName: "avez",
     teamId: TEAM_IDS.VAL.KC,
     teamName: TEAM_NAMES[TEAM_IDS.VAL.KC as keyof typeof TEAM_NAMES],
+  },
+  {
+    twitchLogin: "n4rrate",
+    playerName: "N4rrate",
+    teamId: TEAM_IDS.VAL.KC,
+    teamName: TEAM_NAMES[TEAM_IDS.VAL.KC as keyof typeof TEAM_NAMES],
+  },
+  {
+    twitchLogin: "glancevl",
+    playerName: "Glance",
+    teamId: TEAM_IDS.VAL.KCGC,
+    teamName: TEAM_NAMES[TEAM_IDS.VAL.KCGC as keyof typeof TEAM_NAMES],
+  },
+  {
+    twitchLogin: "anesilia",
+    playerName: "Anesilia",
+    teamId: TEAM_IDS.VAL.KCGC,
+    teamName: TEAM_NAMES[TEAM_IDS.VAL.KCGC as keyof typeof TEAM_NAMES],
+  },
+  {
+    twitchLogin: "safiaaaa_",
+    playerName: "Safia",
+    teamId: TEAM_IDS.VAL.KCGC,
+    teamName: TEAM_NAMES[TEAM_IDS.VAL.KCGC as keyof typeof TEAM_NAMES],
+  },
+  {
+    twitchLogin: "alkyia",
+    playerName: "Alkyia",
+    teamId: TEAM_IDS.VAL.KCGC,
+    teamName: TEAM_NAMES[TEAM_IDS.VAL.KCGC as keyof typeof TEAM_NAMES],
+  },
+  {
+    twitchLogin: "jiexsy",
+    playerName: "Jiex",
+    teamId: TEAM_IDS.VAL.KCGC,
+    teamName: TEAM_NAMES[TEAM_IDS.VAL.KCGC as keyof typeof TEAM_NAMES],
   },
   {
     twitchLogin: "vatira_",

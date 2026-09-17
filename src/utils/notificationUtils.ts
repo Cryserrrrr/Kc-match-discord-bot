@@ -576,7 +576,15 @@ export async function sendTwitchStreamNotification(
     if (eligibleGuilds.length === 0) {
       return;
     }
+    let profileImageUrl: string | undefined;
+    try {
+      const [user] = await twitchService.getUsersByLogin([stream.user_login]);
+      profileImageUrl = user?.profile_image_url || undefined;
+    } catch (error) {
+      logger.warn(`Could not fetch Twitch avatar for ${stream.user_login}:`, error);
+    }
     const streamData: StreamData = {
+      profileImageUrl,
       title: stream.title,
       playerName: playerName,
       teamName: teamName,

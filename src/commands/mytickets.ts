@@ -10,6 +10,10 @@ export const data = new SlashCommandBuilder()
   .setName("mytickets")
   .setDescription("Voir vos tickets de support");
 
+function truncate(text: string, max: number): string {
+  return text.length > max ? text.substring(0, max - 3) + "..." : text;
+}
+
 export async function execute(interaction: CommandInteraction) {
   const startTime = Date.now();
 
@@ -60,7 +64,7 @@ export async function execute(interaction: CommandInteraction) {
             -8
           )}`
         )
-        .setDescription(ticket.description || "Aucune description")
+        .setDescription(truncate(ticket.description || "Aucune description", 1000))
         .addFields(
           {
             name: "Type",
@@ -83,7 +87,7 @@ export async function execute(interaction: CommandInteraction) {
           },
           {
             name: "Réponse",
-            value: ticket.answer || "Aucune réponse",
+            value: truncate(ticket.answer || "Aucune réponse", 1024),
             inline: true,
           }
         )
@@ -95,9 +99,24 @@ export async function execute(interaction: CommandInteraction) {
       return embed;
     });
 
-    const maxEmbedsPerMessage = 10;
-    for (let i = 0; i < embeds.length; i += maxEmbedsPerMessage) {
-      const batch = embeds.slice(i, i + maxEmbedsPerMessage);
+    // Discord limits: 10 embeds and 6000 characters per message
+    const batches: EmbedBuilder[][] = [];
+    let current: EmbedBuilder[] = [];
+    let currentSize = 0;
+    for (const embed of embeds) {
+      const size = JSON.stringify(embed.toJSON()).length;
+      if (current.length > 0 && (current.length >= 10 || currentSize + size > 5000)) {
+        batches.push(current);
+        current = [];
+        currentSize = 0;
+      }
+      current.push(embed);
+      currentSize += size;
+    }
+    if (current.length > 0) batches.push(current);
+
+    for (let i = 0; i < batches.length; i++) {
+      const batch = batches[i];
 
       if (i === 0) {
         await interaction.editReply({
@@ -123,6 +142,13 @@ export async function execute(interaction: CommandInteraction) {
     });
   } catch (error) {
     handleInteractionError(error, "mytickets command");
+    try {
+      await interaction.editReply({
+        content:
+          "❌ Une erreur s'est produite lors du chargement de vos tickets.",
+        embeds: [],
+      });
+    } catch {}
 
     const effectiveGuildId = interaction.guildId || "DM";
     await StatsManager.recordCommandExecution({

@@ -7,7 +7,7 @@ import {
   StringSelectMenuOptionBuilder,
   ChannelType,
 } from "discord.js";
-import { prisma } from "../index";
+import { prisma } from "../db";
 import { logger } from "../utils/logger";
 
 const TEAMS: Record<string, string> = {
@@ -16,13 +16,24 @@ const TEAMS: Record<string, string> = {
   "136080": "KCBS (LFL2)",
   "130922": "KC Valorant",
   "132777": "KCGC Valorant",
-  "136165": "KCBS Valorant",
   "129570": "KC Rocket League",
 };
 
-let selectedTeams: string[] = [];
-let selectedTeamRoles: Record<string, string> = {};
-let currentEditingTeamId: string | null = null;
+// Team filter selection in progress, kept per server + admin so that
+// concurrent /config sessions never overwrite each other.
+const selectedTeamsBySession = new Map<string, string[]>();
+
+function sessionKey(interaction: any): string {
+  return `${interaction.guildId}:${interaction.user?.id}`;
+}
+
+function getSelectedTeams(interaction: any): string[] {
+  return selectedTeamsBySession.get(sessionKey(interaction)) || [];
+}
+
+function setSelectedTeams(interaction: any, teams: string[]) {
+  selectedTeamsBySession.set(sessionKey(interaction), teams);
+}
 
 function createBackButton(): ButtonBuilder {
   return new ButtonBuilder()
@@ -437,7 +448,6 @@ export async function handleTwitchRoleSelection(
 
 export async function showTeamRolesConfig(interaction: any, guildSettings: any) {
   const teamRoles = (guildSettings?.teamRoles as Record<string, string>) || {};
-  selectedTeamRoles = { ...teamRoles };
 
   const embed = new EmbedBuilder()
     .setTitle("🏆 Rôles par Équipe")
@@ -495,7 +505,6 @@ export async function showTeamRoleSelection(
   teamId: string,
   guildSettings: any
 ) {
-  currentEditingTeamId = teamId;
   const teamName = TEAMS[teamId] || teamId;
   const teamRoles = (guildSettings?.teamRoles as Record<string, string>) || {};
   const currentRole = teamRoles[teamId];
@@ -630,11 +639,17 @@ export async function handleClearTeamRoles(interaction: any, guildId: string) {
 }
 
 export async function showTeamsConfig(interaction: any, guildSettings: any) {
-  const currentFilteredTeams = guildSettings?.filteredTeams || [];
-  selectedTeams =
+  // Ignore IDs of rosters that no longer exist
+  const currentFilteredTeams = (guildSettings?.filteredTeams || []).filter(
+    (id: string) => id in TEAMS
+  );
+  setSelectedTeams(
+    interaction,
     currentFilteredTeams.length === 0
       ? Object.keys(TEAMS)
-      : [...currentFilteredTeams];
+      : [...currentFilteredTeams]
+  );
+  const selectedTeams = getSelectedTeams(interaction);
 
   const embed = new EmbedBuilder()
     .setTitle("🏆 Configuration du Filtre d'Équipes")
@@ -695,11 +710,13 @@ export async function showTeamsConfig(interaction: any, guildSettings: any) {
 
 export async function handleTeamSelection(interaction: any, guildId: string) {
   const teamId = interaction.customId.replace("team_", "");
-  if (selectedTeams.includes(teamId)) {
-    selectedTeams = selectedTeams.filter((id) => id !== teamId);
-  } else {
-    selectedTeams.push(teamId);
-  }
+  const selectedTeams = getSelectedTeams(interaction);
+  setSelectedTeams(
+    interaction,
+    selectedTeams.includes(teamId)
+      ? selectedTeams.filter((id) => id !== teamId)
+      : [...selectedTeams, teamId]
+  );
   await updateTeamsDisplay(interaction);
 }
 
@@ -713,10 +730,12 @@ export async function handleTeamsConfirmation(
     return;
   }
 
+  const selectedTeams = getSelectedTeams(interaction);
   await prisma.guildSettings.update({
     where: { guildId },
     data: { filteredTeams: selectedTeams },
   });
+  selectedTeamsBySession.delete(sessionKey(interaction));
 
   const responseMessage =
     selectedTeams.length === 0
@@ -734,16 +753,17 @@ export async function handleTeamsConfirmation(
 }
 
 export async function handleTeamsClear(interaction: any, guildId: string) {
-  selectedTeams = [];
+  setSelectedTeams(interaction, []);
   await updateTeamsDisplay(interaction);
 }
 
 export async function handleTeamsSelectAll(interaction: any, guildId: string) {
-  selectedTeams = Object.keys(TEAMS);
+  setSelectedTeams(interaction, Object.keys(TEAMS));
   await updateTeamsDisplay(interaction);
 }
 
 async function updateTeamsDisplay(interaction: any) {
+  const selectedTeams = getSelectedTeams(interaction);
   const embed = new EmbedBuilder()
     .setTitle("🏆 Configuration du Filtre d'Équipes")
     .setDescription(

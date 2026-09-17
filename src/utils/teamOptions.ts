@@ -33,11 +33,6 @@ export const KC_TEAMS: TeamOption[] = [
     description: "Équipe féminine Valorant",
   },
   {
-    id: "136165",
-    name: "KCBS Valorant",
-    description: "Équipe KCBS Valorant",
-  },
-  {
     id: "129570",
     name: "KC Rocket League",
     description: "Équipe Rocket League",

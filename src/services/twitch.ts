@@ -158,6 +158,8 @@ export class TwitchService {
         const batch = userIds.slice(i, i + batchSize);
         const data = await this.makeRequest("/streams", {
           user_id: batch,
+          // Default page size is 20; request the max so no live stream is missed
+          first: 100,
         });
         streams.push(...(data.data || []));
       }

@@ -1,5 +1,17 @@
 import { EmbedBuilder } from "discord.js";
 import { formatDate, formatTime } from "./dateUtils";
+import { getCasterForLeague } from "./casters";
+
+function addCasterField(embed: EmbedBuilder, match: MatchData) {
+  const caster = getCasterForLeague(match.leagueName, match.kcId);
+  if (caster) {
+    embed.addFields({
+      name: "📺 Cocast",
+      value: `[${caster.name} sur Twitch](${caster.twitchLink})`,
+      inline: false,
+    });
+  }
+}
 
 export interface MatchData {
   kcTeam: string;
@@ -69,6 +81,9 @@ export async function createMatchEmbed(
     .setFooter({ text: "Karmine Corp Match Bot" })
     .setThumbnail(match.leagueImage || kcLogoUrl);
 
+  // Kept last so the Twitch link sits at the bottom of the announcement
+  addCasterField(embed, match);
+
   return embed;
 }
 
@@ -123,6 +138,9 @@ export async function createRescheduleEmbed(
     .setTimestamp()
     .setFooter({ text: "Karmine Corp Match Bot" })
     .setThumbnail(match.leagueImage || kcLogoUrl);
+
+  // Kept last so the Twitch link sits at the bottom of the announcement
+  addCasterField(embed, match);
 
   return embed;
 }
@@ -207,6 +225,7 @@ export interface StreamData {
   viewerCount: number;
   thumbnailUrl: string;
   startedAt: Date;
+  profileImageUrl?: string;
 }
 
 export async function createStreamEmbed(
@@ -226,7 +245,8 @@ export async function createStreamEmbed(
     .setURL(streamUrl)
     .setAuthor({
       name: stream.playerName,
-      iconURL: `https://static-cdn.jtvnw.net/jtv_user_pictures/${stream.userId}-profile_image-70x70.png`,
+      // Real avatar URL from the Twitch API (avatar URLs can't be derived from the user ID)
+      iconURL: stream.profileImageUrl || undefined,
       url: streamUrl,
     })
     .setDescription(`**${stream.teamName}**`)
@@ -249,7 +269,7 @@ function getEmbedColor(kcId: string): number {
     return 0x1e90ff;
   }
 
-  if (kcId === "130922" || kcId === "132777" || kcId === "136165") {
+  if (kcId === "130922" || kcId === "132777") {
     return 0xff4655;
   }
 

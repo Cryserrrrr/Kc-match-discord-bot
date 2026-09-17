@@ -1,6 +1,6 @@
 import { SlashCommandBuilder } from "@discordjs/builders";
 import { EmbedBuilder, User } from "discord.js";
-import { prisma } from "../index";
+import { prisma } from "../db";
 import { logger } from "../utils/logger";
 import { TitleManager } from "../utils/titleManager";
 
@@ -19,7 +19,23 @@ export async function execute(interaction: any) {
     const target: User =
       interaction.options.getUser("utilisateur") || interaction.user;
     const userId = target.id;
-    await TitleManager.unlockWealthTitle(userId, interaction.client);
+
+    if (target.bot) {
+      await interaction.reply({
+        content: "Les bots n'ont pas de profil.",
+        ephemeral: true,
+      });
+      return;
+    }
+
+    // Public reply, deferred so the DB queries below cannot exceed the 3s limit
+    await interaction.deferReply();
+
+    try {
+      await TitleManager.unlockWealthTitle(userId, interaction.client);
+    } catch (error) {
+      logger.warn("Error unlocking wealth title:", error);
+    }
 
     const user = await prisma.user.upsert({
       where: { id: userId },
@@ -34,23 +50,17 @@ export async function execute(interaction: any) {
       include: { title: true },
     });
 
-    const totalBets = await prisma.bet.count({
-      where: { userId, status: { in: ["WON", "LOST"] } },
-    });
-    const wonBets = await prisma.bet.count({
-      where: { userId, status: "WON" },
-    });
-    const lostBets = await prisma.bet.count({
-      where: { userId, status: "LOST" },
-    });
-    const totalWageredAgg = await prisma.bet.aggregate({
-      _sum: { amount: true },
-      where: { userId },
-    });
-    const totalWonAgg = await prisma.bet.aggregate({
-      _sum: { amount: true },
-      where: { userId, status: "WON" },
-    });
+    const [wonBets, lostBets, totalWageredAgg, totalWonAgg] =
+      await Promise.all([
+        prisma.bet.count({ where: { userId, status: "WON" } }),
+        prisma.bet.count({ where: { userId, status: "LOST" } }),
+        prisma.bet.aggregate({ _sum: { amount: true }, where: { userId } }),
+        prisma.bet.aggregate({
+          _sum: { amount: true },
+          where: { userId, status: "WON" },
+        }),
+      ]);
+    const totalBets = wonBets + lostBets;
     const winRate = totalBets > 0 ? Math.round((wonBets / totalBets) * 100) : 0;
 
     const embed = new EmbedBuilder()
@@ -82,11 +92,20 @@ export async function execute(interaction: any) {
       )
       .setTimestamp();
 
-    await interaction.reply({ embeds: [embed] });
+    await interaction.editReply({ embeds: [embed] });
   } catch (error) {
     logger.error("Error in profil command:", error);
-    await interaction.reply({
-      content: "Erreur lors de l'affichage du profil.",
-    });
+    try {
+      if (interaction.deferred || interaction.replied) {
+        await interaction.editReply({
+          content: "Erreur lors de l'affichage du profil.",
+        });
+      } else {
+        await interaction.reply({
+          content: "Erreur lors de l'affichage du profil.",
+          ephemeral: true,
+        });
+      }
+    } catch {}
   }
 }
