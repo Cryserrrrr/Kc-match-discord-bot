@@ -10,12 +10,20 @@ const TEAM_IDS = {
   VAL: {
     KC: "130922",
     KCGC: "132777",
-    KCBS: "136165",
   },
   RL: {
     KC: "129570",
   },
 };
+
+/** PandaScore IDs of every active Karmine Corp roster. */
+export function getKarmineCorpTeamIds(): string[] {
+  return [
+    ...Object.values(TEAM_IDS.LOL),
+    ...Object.values(TEAM_IDS.VAL),
+    ...Object.values(TEAM_IDS.RL),
+  ];
+}
 
 export interface PandaScoreMatch {
   id: number;
@@ -115,7 +123,6 @@ export class PandaScoreService {
       TEAM_IDS.LOL.KCBS,
       TEAM_IDS.VAL.KC,
       TEAM_IDS.VAL.KCGC,
-      TEAM_IDS.VAL.KCBS,
       TEAM_IDS.RL.KC,
     ];
 
@@ -150,7 +157,6 @@ export class PandaScoreService {
       TEAM_IDS.LOL.KCBS,
       TEAM_IDS.VAL.KC,
       TEAM_IDS.VAL.KCGC,
-      TEAM_IDS.VAL.KCBS,
       TEAM_IDS.RL.KC,
     ];
 
@@ -183,7 +189,6 @@ export class PandaScoreService {
       TEAM_IDS.LOL.KCBS,
       TEAM_IDS.VAL.KC,
       TEAM_IDS.VAL.KCGC,
-      TEAM_IDS.VAL.KCBS,
       TEAM_IDS.RL.KC,
     ];
 
@@ -220,7 +225,6 @@ export class PandaScoreService {
       TEAM_IDS.LOL.KCBS,
       TEAM_IDS.VAL.KC,
       TEAM_IDS.VAL.KCGC,
-      TEAM_IDS.VAL.KCBS,
       TEAM_IDS.RL.KC,
     ];
 
@@ -254,7 +258,6 @@ export class PandaScoreService {
       TEAM_IDS.LOL.KCBS,
       TEAM_IDS.VAL.KC,
       TEAM_IDS.VAL.KCGC,
-      TEAM_IDS.VAL.KCBS,
       TEAM_IDS.RL.KC,
     ];
 
@@ -278,7 +281,6 @@ export class PandaScoreService {
       TEAM_IDS.LOL.KCBS,
       TEAM_IDS.VAL.KC,
       TEAM_IDS.VAL.KCGC,
-      TEAM_IDS.VAL.KCBS,
       TEAM_IDS.RL.KC,
     ];
 

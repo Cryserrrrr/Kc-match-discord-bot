@@ -16,7 +16,6 @@ const TEAMS: Record<string, string> = {
   "136080": "KCBS (LFL2)",
   "130922": "KC Valorant",
   "132777": "KCGC Valorant",
-  "136165": "KCBS Valorant",
   "129570": "KC Rocket League",
 };
 
@@ -640,7 +639,10 @@ export async function handleClearTeamRoles(interaction: any, guildId: string) {
 }
 
 export async function showTeamsConfig(interaction: any, guildSettings: any) {
-  const currentFilteredTeams = guildSettings?.filteredTeams || [];
+  // Ignore IDs of rosters that no longer exist
+  const currentFilteredTeams = (guildSettings?.filteredTeams || []).filter(
+    (id: string) => id in TEAMS
+  );
   setSelectedTeams(
     interaction,
     currentFilteredTeams.length === 0

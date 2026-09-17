@@ -1,7 +1,10 @@
 import { PrismaClient } from "@prisma/client";
 import { config } from "dotenv";
 import { logger } from "../utils/logger";
-import { PandaScoreService } from "../services/pandascore";
+import {
+  getKarmineCorpTeamIds,
+  PandaScoreService,
+} from "../services/pandascore";
 
 config();
 
@@ -12,7 +15,10 @@ async function updateMatches() {
   try {
     logger.info("Starting matches update...");
 
+    // Matches of removed rosters are left untouched: without their team ID,
+    // PandaScore data would be parsed with KC and opponent swapped
     const matches = await prisma.match.findMany({
+      where: { kcId: { in: getKarmineCorpTeamIds() } },
       orderBy: { beginAt: "desc" },
     });
 

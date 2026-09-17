@@ -175,7 +175,6 @@ Most commands work in private messages (DMs):
 - **KCBS (LFL2)** - LFL2 League of Legends team
 - **KC Valorant** - Main Valorant team
 - **KCGC Valorant** - Game Changers Valorant team
-- **KCBS Valorant** - Academy Valorant team
 - **KC Rocket League** - Rocket League team
 
 ## 📊 Statistics & Analytics

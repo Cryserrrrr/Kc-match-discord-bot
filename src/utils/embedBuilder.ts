@@ -267,7 +267,7 @@ function getEmbedColor(kcId: string): number {
     return 0x1e90ff;
   }
 
-  if (kcId === "130922" || kcId === "132777" || kcId === "136165") {
+  if (kcId === "130922" || kcId === "132777") {
     return 0xff4655;
   }
 

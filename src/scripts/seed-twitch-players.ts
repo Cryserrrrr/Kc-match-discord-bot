@@ -16,7 +16,6 @@ const TEAM_IDS = {
   VAL: {
     KC: "130922",
     KCGC: "132777",
-    KCBS: "136165",
   },
   RL: {
     KC: "129570",
@@ -29,7 +28,6 @@ const TEAM_NAMES = {
   "136080": "KCBS LoL",
   "130922": "KC Valorant",
   "132777": "KCGC Valorant",
-  "136165": "KCBS Valorant",
   "129570": "KC Rocket League",
 };
 

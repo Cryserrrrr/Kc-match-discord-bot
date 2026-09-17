@@ -48,10 +48,9 @@ const MAIN_LEAGUE_BY_TEAM_ID: Record<string, string> = {
   "134078": "LEC",
   "128268": "LEC",
   "136080": "LEC",
-  // Valorant: KC, KCGC, KCBS
+  // Valorant: KC, KCGC
   "130922": "VCT",
   "132777": "VCT",
-  "136165": "VCT",
   // Rocket League
   "129570": "RLCS",
 };
