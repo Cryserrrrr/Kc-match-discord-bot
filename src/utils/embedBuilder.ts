@@ -225,6 +225,7 @@ export interface StreamData {
   viewerCount: number;
   thumbnailUrl: string;
   startedAt: Date;
+  profileImageUrl?: string;
 }
 
 export async function createStreamEmbed(
@@ -244,7 +245,8 @@ export async function createStreamEmbed(
     .setURL(streamUrl)
     .setAuthor({
       name: stream.playerName,
-      iconURL: `https://static-cdn.jtvnw.net/jtv_user_pictures/${stream.userId}-profile_image-70x70.png`,
+      // Real avatar URL from the Twitch API (avatar URLs can't be derived from the user ID)
+      iconURL: stream.profileImageUrl || undefined,
       url: streamUrl,
     })
     .setDescription(`**${stream.teamName}**`)
