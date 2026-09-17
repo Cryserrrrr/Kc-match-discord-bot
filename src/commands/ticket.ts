@@ -11,19 +11,29 @@ import { StatsManager } from "../utils/statsManager";
 import { logger } from "../utils/logger";
 import { handleInteractionError } from "../utils/retryUtils";
 
-export const data = new SlashCommandBuilder()
-  .setName("ticket")
-  .setDescription("Créer un ticket de support (bug ou amélioration)")
-  .addStringOption((option: any) =>
-    option
-      .setName("type")
-      .setDescription("Type de ticket")
-      .setRequired(true)
-      .addChoices(
-        { name: "🐛 Bug", value: "BUG" },
-        { name: "💡 Amélioration", value: "IMPROVEMENT" }
-      )
-  );
+// Cast: chaining after addStringOption narrows the builder type and hides addBooleanOption
+export const data = (
+  new SlashCommandBuilder()
+    .setName("ticket")
+    .setDescription("Créer un ticket de support (bug ou amélioration)")
+    .addStringOption((option: any) =>
+      option
+        .setName("type")
+        .setDescription("Type de ticket")
+        .setRequired(true)
+        .addChoices(
+          { name: "🐛 Bug", value: "BUG" },
+          { name: "💡 Amélioration", value: "IMPROVEMENT" }
+        )
+    ) as any
+).addBooleanOption((option: any) =>
+  option
+    .setName("notification")
+    .setDescription(
+      "Recevoir un message privé quand le support répond (oui par défaut)"
+    )
+    .setRequired(false)
+);
 
 export async function execute(interaction: CommandInteraction) {
   const startTime = Date.now();
@@ -37,9 +47,11 @@ export async function execute(interaction: CommandInteraction) {
     const username = interaction.user.username;
 
     const effectiveGuildId = guildId || "DM";
+    const notifyOnAnswer =
+      (interaction as any).options?.getBoolean("notification") ?? true;
 
     const modal = new ModalBuilder()
-      .setCustomId(`ticket_modal_${ticketType}`)
+      .setCustomId(`ticket_modal_${ticketType}_${notifyOnAnswer ? "dm" : "nodm"}`)
       .setTitle(
         `${ticketType === "BUG" ? "🐛" : "💡"} Nouveau ticket - ${ticketType === "BUG" ? "Bug" : "Amélioration"
         }`
@@ -98,9 +110,9 @@ export async function handleTicketModalSubmit(interaction: any) {
     // Acknowledge within Discord's 3s window before any DB/DM work
     await interaction.deferReply({ flags: 64 });
 
-    const ticketType = interaction.customId.split("_")[2] as
-      | "BUG"
-      | "IMPROVEMENT";
+    const [, , rawType, notifyFlag] = interaction.customId.split("_");
+    const ticketType = rawType as "BUG" | "IMPROVEMENT";
+    const notifyOnAnswer = notifyFlag === "dm";
     const description =
       interaction.fields.getTextInputValue("ticket_description");
 
@@ -115,7 +127,8 @@ export async function handleTicketModalSubmit(interaction: any) {
       userId,
       username,
       ticketType,
-      description
+      description,
+      notifyOnAnswer
     );
 
     // Send DM to admin user about new ticket
@@ -199,6 +212,12 @@ export async function handleTicketModalSubmit(interaction: any) {
           inline: true,
         },
         { name: "Statut", value: "Ouvert", inline: true },
+        {
+          name: "Notification",
+          value: notifyOnAnswer
+            ? "🔔 Vous recevrez un message privé dès que le support répondra"
+            : "🔕 Pas de message privé à la réponse (voir `/mytickets`)",
+        },
         {
           name: "Description",
           value:

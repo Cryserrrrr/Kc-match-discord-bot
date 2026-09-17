@@ -14,6 +14,7 @@ import {
 } from "./commands/duel";
 import { EventHandlers } from "./handlers/eventHandlers";
 import { StatusHandler } from "./handlers/statusHandler";
+import { startTicketAnswerNotifier } from "./utils/ticketAnswerNotifier";
 
 config();
 
@@ -51,6 +52,7 @@ client.once("ready", async () => {
     await loadCommands(client);
     logger.info("Commands loaded successfully");
     statusHandler.startStatusUpdates();
+    startTicketAnswerNotifier(client);
   } catch (error) {
     logger.error("Error during bot initialization:", error);
   }

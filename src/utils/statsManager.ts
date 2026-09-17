@@ -109,7 +109,8 @@ export class StatsManager {
     userId: string,
     username: string,
     type: "BUG" | "IMPROVEMENT",
-    description?: string
+    description?: string,
+    notifyOnAnswer: boolean = false
   ): Promise<any> {
     try {
       await this.ensureGuildExists(guildId);
@@ -123,6 +124,7 @@ export class StatsManager {
           username,
           type,
           description,
+          notifyOnAnswer,
         },
       });
 
