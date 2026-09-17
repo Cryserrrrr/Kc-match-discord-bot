@@ -1,5 +1,17 @@
 import { EmbedBuilder } from "discord.js";
 import { formatDate, formatTime } from "./dateUtils";
+import { getCasterForLeague } from "./casters";
+
+function addCasterField(embed: EmbedBuilder, match: MatchData) {
+  const caster = getCasterForLeague(match.leagueName, match.kcId);
+  if (caster) {
+    embed.addFields({
+      name: "📺 Cocast",
+      value: `[${caster.name} sur Twitch](${caster.twitchLink})`,
+      inline: false,
+    });
+  }
+}
 
 export interface MatchData {
   kcTeam: string;
@@ -69,6 +81,9 @@ export async function createMatchEmbed(
     .setFooter({ text: "Karmine Corp Match Bot" })
     .setThumbnail(match.leagueImage || kcLogoUrl);
 
+  // Kept last so the Twitch link sits at the bottom of the announcement
+  addCasterField(embed, match);
+
   return embed;
 }
 
@@ -123,6 +138,9 @@ export async function createRescheduleEmbed(
     .setTimestamp()
     .setFooter({ text: "Karmine Corp Match Bot" })
     .setThumbnail(match.leagueImage || kcLogoUrl);
+
+  // Kept last so the Twitch link sits at the bottom of the announcement
+  addCasterField(embed, match);
 
   return embed;
 }

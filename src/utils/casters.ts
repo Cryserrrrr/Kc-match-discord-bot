@@ -28,7 +28,7 @@ const casters: Caster[] = [
   {
     name: "Kenny",
     twitchLink: "https://www.twitch.tv/kennystream",
-    leagues: ["RL"],
+    leagues: ["RL", "RLCS", "Rocket League"],
   },
   {
     name: "Fatih",
@@ -37,20 +37,37 @@ const casters: Caster[] = [
   },
 ];
 
-export function getCasterForLeague(leagueName: string): Caster | null {
-  // The most specific keyword wins, so "LFL Division 2" matches Slipix
-  // rather than the shorter "LFL" keyword.
-  const name = leagueName.toLowerCase();
+const ROCKET_LEAGUE_TEAM_ID = "129570";
+
+function escapeRegExp(text: string): string {
+  return text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+export function getCasterForLeague(
+  leagueName: string,
+  kcId?: string
+): Caster | null {
+  // Keywords must match whole words ("RL" must not match "World"), and the
+  // most specific keyword wins ("LFL Division 2" beats "LFL").
   let best: { caster: Caster; length: number } | null = null;
   for (const caster of casters) {
     for (const league of caster.leagues) {
-      const keyword = league.toLowerCase();
-      if (name.includes(keyword) && (!best || keyword.length > best.length)) {
-        best = { caster, length: keyword.length };
+      const pattern = new RegExp(
+        `(^|[^a-z0-9])${escapeRegExp(league)}($|[^a-z0-9])`,
+        "i"
+      );
+      if (pattern.test(leagueName) && (!best || league.length > best.length)) {
+        best = { caster, length: league.length };
       }
     }
   }
-  return best ? best.caster : null;
+  if (best) return best.caster;
+
+  // Unknown league name for the Rocket League roster: fall back to its caster
+  if (kcId === ROCKET_LEAGUE_TEAM_ID) {
+    return casters.find((c) => c.leagues.includes("RL")) || null;
+  }
+  return null;
 }
 
 export function getStreamingUrl(leagueName: string): string | null {
