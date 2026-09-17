@@ -1,5 +1,5 @@
 import { EmbedBuilder } from "discord.js";
-import { prisma } from "../index";
+import { prisma } from "../db";
 import { logger } from "./logger";
 
 export async function sendBetAnnouncement(

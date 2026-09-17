@@ -334,6 +334,16 @@ async function checkAndSaveMatches(prisma: PrismaClient) {
       liveMatches,
       pastMatches
     );
+
+    // Resolve bets left unresolved (missed live→finished transition, earlier failure...)
+    try {
+      const resultProcessor = new ResultProcessor(prisma, () =>
+        getDiscordClient()
+      );
+      await resultProcessor.processPendingResults();
+    } catch (catchUpError) {
+      logger.error("Error in pending results catch-up:", catchUpError);
+    }
   } catch (error) {
     logger.error("❌ Error checking matches:", error);
     throw error;

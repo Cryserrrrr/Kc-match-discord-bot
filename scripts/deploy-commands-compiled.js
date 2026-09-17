@@ -1,3 +1,4 @@
+require("dotenv").config();
 const { REST, Routes } = require("discord.js");
 const { readdirSync } = require("fs");
 const { join } = require("path");
@@ -83,4 +84,7 @@ deployCommands().catch((error) => {
     logger.error("Fatal error in deploy commands:", error);
     logger.warn("Bot will continue despite command deployment error.");
   }
+}).finally(() => {
+  // Command modules may keep timers alive; exit so the bot can start next
+  process.exit(0);
 });

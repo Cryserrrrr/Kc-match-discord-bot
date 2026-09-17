@@ -4,7 +4,7 @@ import {
   ActionRowBuilder,
   StringSelectMenuBuilder,
 } from "discord.js";
-import { prisma } from "../index";
+import { prisma } from "../db";
 import { logger } from "../utils/logger";
 import { createMatchEmbed } from "../utils/embedBuilder";
 import { getTeamDisplayName } from "../utils/teamMapper";

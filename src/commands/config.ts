@@ -8,7 +8,7 @@ import {
   StringSelectMenuOptionBuilder,
   EmbedBuilder,
 } from "discord.js";
-import { prisma } from "../index";
+import { prisma } from "../db";
 import { logger } from "../utils/logger";
 import {
   showChannelConfig,
@@ -210,14 +210,15 @@ export async function execute(interaction: CommandInteraction) {
     const mainRow =
       new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(mainMenu);
 
-    await interaction.editReply({
+    const reply = await interaction.editReply({
       embeds: [mainEmbed],
       components: [mainRow],
     });
 
-    const collector = interaction.channel!.createMessageComponentCollector({
+    // Scoped to this reply: other /config or /nextmatch menus in the channel are ignored
+    const collector = reply.createMessageComponentCollector({
       time: 120000,
-      filter: (i) => i.user.id === interaction.user.id,
+      filter: (i: any) => i.user.id === interaction.user.id,
     });
 
     activeConfigSessions.set(userId, { collector, guildId });

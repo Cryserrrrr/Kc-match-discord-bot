@@ -1,4 +1,4 @@
-import { prisma } from "../index";
+import { prisma } from "../db";
 import { logger } from "./logger";
 import { Client } from "discord.js";
 

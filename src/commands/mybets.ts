@@ -4,7 +4,6 @@ import {
   ActionRowBuilder,
   StringSelectMenuBuilder,
 } from "discord.js";
-import { PrismaClient } from "@prisma/client";
 import { logger } from "../utils/logger";
 import {
   formatBetStatus,
@@ -13,7 +12,10 @@ import {
 } from "../utils/statusDisplay";
 import { formatDate, formatTime } from "../utils/dateUtils";
 
-const prisma = new PrismaClient();
+import { prisma } from "../db";
+
+// Discord embeds allow 25 fields; keep room for the summary field
+const MAX_LISTED_BETS = 20;
 
 export const data = new SlashCommandBuilder()
   .setName("mybets")
@@ -120,7 +122,7 @@ async function buildActiveBetsEmbed(user: any, activeBets: any[]) {
     .setTimestamp();
 
   if (activeBets.length > 0) {
-    (activeBets as any[]).forEach((bet: any, index: number) => {
+    (activeBets as any[]).slice(0, MAX_LISTED_BETS).forEach((bet: any, index: number) => {
       const match = bet.match;
       const matchDate = formatDate(match.beginAt);
       const matchTime = formatTime(match.beginAt, { withTz: false });
@@ -141,6 +143,12 @@ async function buildActiveBetsEmbed(user: any, activeBets: any[]) {
       (sum, bet) => sum + Math.floor(bet.amount * bet.odds),
       0
     );
+
+    if (activeBets.length > MAX_LISTED_BETS) {
+      embed.setFooter({
+        text: `+ ${activeBets.length - MAX_LISTED_BETS} autre(s) pari(s) non affiché(s)`,
+      });
+    }
 
     embed.addFields({
       name: "Résumé",

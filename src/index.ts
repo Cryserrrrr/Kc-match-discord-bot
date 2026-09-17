@@ -1,6 +1,6 @@
 import { Client, GatewayIntentBits, Collection } from "discord.js";
 import { config } from "dotenv";
-import { PrismaClient } from "@prisma/client";
+import { prisma } from "./db";
 import { loadCommands } from "./commands/commandLoader";
 import { logger } from "./utils/logger";
 import { InteractionHandlers } from "./handlers/interactionHandlers";
@@ -17,7 +17,7 @@ import { StatusHandler } from "./handlers/statusHandler";
 
 config();
 
-export const prisma = new PrismaClient();
+export { prisma };
 
 export const client = new Client({
   intents: [

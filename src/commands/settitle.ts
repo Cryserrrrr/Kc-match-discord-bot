@@ -5,7 +5,7 @@ import {
   StringSelectMenuOptionBuilder,
   ActionRowBuilder,
 } from "discord.js";
-import { prisma } from "../index";
+import { prisma } from "../db";
 import { logger } from "../utils/logger";
 import { TitleManager } from "../utils/titleManager";
 

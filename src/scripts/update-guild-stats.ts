@@ -1,6 +1,6 @@
 import { Client, GatewayIntentBits } from "discord.js";
 import { config } from "dotenv";
-import { prisma } from "../index";
+import { prisma } from "../db";
 import { logger } from "../utils/logger";
 import { StatsManager } from "../utils/statsManager";
 import { withRetry, withTimeout } from "../utils/retryUtils";

@@ -9,7 +9,7 @@ import {
   TextInputBuilder,
   TextInputStyle,
 } from "discord.js";
-import { prisma } from "../index";
+import { prisma } from "../db";
 import {
   calculateBaseOddsFromHistory,
   calculateScoreOdds,
@@ -20,6 +20,15 @@ import { TitleManager } from "../utils/titleManager";
 import { TournamentUtils } from "../utils/tournamentUtils";
 import { formatDateTime } from "../utils/dateUtils";
 import { sendBetAnnouncement } from "../utils/betAnnouncement";
+import {
+  assertMatchOpenForBetting,
+  BettingClosedError,
+  debitPoints,
+  InsufficientFundsError,
+  isMatchOpenForBetting,
+  MIN_STAKE,
+  parseStake,
+} from "../utils/wallet";
 
 const activeBetSessions = new Map<string, any>();
 
@@ -69,16 +78,18 @@ export async function execute(interaction: any) {
       return;
     }
 
-    const matchOptions = await Promise.all(
-      upcomingMatches.map(async (match, index) => {
-        const userBets = await prisma.bet.findMany({
-          where: {
-            matchId: match.id,
-            userId: userId,
-          },
-        });
+    const userBets = await prisma.bet.findMany({
+      where: {
+        userId: userId,
+        matchId: { in: upcomingMatches.map((m) => m.id) },
+      },
+      select: { matchId: true },
+    });
+    const matchIdsWithBet = new Set(userBets.map((b) => b.matchId));
 
-        const hasBet = userBets.length > 0;
+    const matchOptions = await Promise.all(
+      upcomingMatches.map(async (match) => {
+        const hasBet = matchIdsWithBet.has(match.id);
         const when = formatDateTime(match.beginAt, { withTz: false });
         const description = hasBet
           ? `${match.tournamentName} - ${when} - Pari déjà placé`
@@ -336,7 +347,9 @@ export async function handleScoreSelection(interaction: any) {
       const description =
         kcScore > opponentScore
           ? `${match.kcTeam} gagne ${score}`
-          : `${match.opponent} gagne ${score}`;
+          : kcScore < opponentScore
+          ? `${match.opponent} gagne ${score}`
+          : `Match nul ${score}`;
 
       return {
         label: `${score} (${scoreOdds[score] || 3.0}x)`,
@@ -554,71 +567,94 @@ export async function handleScoreSelect(interaction: any) {
   }
 }
 
-export async function handleScoreBetAmount(interaction: any) {
+async function replyEphemeral(interaction: any, payload: any) {
   try {
-    const customId = interaction.customId;
-    const [, , , matchId, predictedScore, odds] = customId.split("_");
-    const userId = interaction.user.id;
-    const amount = parseInt(interaction.fields.getTextInputValue("bet_amount"));
-
-    if (isNaN(amount) || amount < 25) {
-      await interaction.reply({
-        content: "La mise minimum est de 25 Perticoin.",
-        ephemeral: true,
-      });
-      return;
+    if (interaction.deferred || interaction.replied) {
+      await interaction.editReply(payload);
+    } else {
+      await interaction.reply({ ...payload, ephemeral: true });
     }
+  } catch (error) {
+    console.error("Error sending bet response:", error);
+  }
+}
 
-    const user = await prisma.user.findUnique({
-      where: { id: userId },
-    });
+async function getTeamOdds(match: any) {
+  const [kcAgg, opponentAgg] = await Promise.all([
+    prisma.bet.aggregate({
+      where: { matchId: match.id, type: "TEAM", selection: match.kcTeam },
+      _sum: { amount: true },
+    }),
+    prisma.bet.aggregate({
+      where: { matchId: match.id, type: "TEAM", selection: match.opponent },
+      _sum: { amount: true },
+    }),
+  ]);
+  const baseOdds = await calculateBaseOddsFromHistory(match.opponent);
+  return calculateDynamicOdds(
+    baseOdds.kcOdds,
+    baseOdds.opponentOdds,
+    kcAgg._sum.amount || 0,
+    opponentAgg._sum.amount || 0
+  );
+}
 
-    if (!user || user.points < amount) {
-      await interaction.reply({
-        content: `Fonds insuffisants. Vous avez ${
-          user?.points || 0
-        } Perticoin.`,
-        ephemeral: true,
-      });
-      return;
-    }
-
-    const match = await prisma.match.findUnique({
-      where: { id: matchId },
-    });
-
-    if (!match) {
-      await interaction.reply({
-        content: "Match introuvable.",
-        ephemeral: true,
-      });
-      return;
-    }
-
-    const sessionOdds = parseFloat(odds);
-
-    const existingBets = await prisma.bet.findMany({
-      where: { matchId: matchId },
-    });
-
-    const created = await prisma.bet.create({
+async function placeBet(
+  interaction: any,
+  params: {
+    matchId: string;
+    type: "TEAM" | "SCORE";
+    selection: string;
+    amount: number;
+    odds: number;
+  }
+) {
+  const userId = interaction.user.id;
+  return prisma.$transaction(async (tx) => {
+    await assertMatchOpenForBetting(tx, params.matchId);
+    await debitPoints(tx, userId, params.amount);
+    const created = await tx.bet.create({
       data: {
-        guildId: interaction.guildId,
-        userId: userId,
-        matchId: matchId,
-        type: "SCORE",
-        selection: predictedScore,
-        amount: amount,
-        odds: sessionOdds,
-      } as any,
+        guildId: interaction.guildId || "",
+        userId,
+        matchId: params.matchId,
+        type: params.type,
+        selection: params.selection,
+        amount: params.amount,
+        odds: params.odds,
+      },
     });
+    const user = await tx.user.findUnique({ where: { id: userId } });
+    return { created, newBalance: user?.points ?? 0 };
+  });
+}
 
-    await prisma.user.update({
-      where: { id: userId },
-      data: { points: user.points - amount },
+async function handlePlaceBetError(interaction: any, error: any) {
+  if (error instanceof InsufficientFundsError) {
+    const user = await prisma.user.findUnique({
+      where: { id: interaction.user.id },
     });
+    await replyEphemeral(interaction, {
+      content: `Fonds insuffisants. Vous avez ${user?.points || 0} Perticoin.`,
+    });
+    return true;
+  }
+  if (error instanceof BettingClosedError) {
+    await replyEphemeral(interaction, {
+      content: "Les paris sont fermés pour ce match.",
+    });
+    return true;
+  }
+  return false;
+}
 
-    if (interaction.guildId) {
+async function runPostBetSideEffects(
+  interaction: any,
+  created: { id: string; createdAt: Date }
+): Promise<boolean> {
+  const userId = interaction.user.id;
+  if (interaction.guildId) {
+    try {
       const tutils = new TournamentUtils(prisma);
       await tutils.linkBetIfEligible(
         interaction.guildId,
@@ -626,13 +662,88 @@ export async function handleScoreBetAmount(interaction: any) {
         created.id,
         created.createdAt
       );
+    } catch (error) {
+      console.error("Error linking bet to tournament:", error);
     }
+  }
 
-    const titleUnlocked = await TitleManager.unlockFirstBetTitle(
+  let titleUnlocked = false;
+  try {
+    titleUnlocked = await TitleManager.unlockFirstBetTitle(
       userId,
       interaction.client
     );
     await TitleManager.unlockBetCountMilestone(userId, interaction.client);
+  } catch (error) {
+    console.error("Error unlocking bet titles:", error);
+  }
+  return titleUnlocked;
+}
+
+export async function handleScoreBetAmount(interaction: any) {
+  try {
+    const customId = interaction.customId;
+    const [, , , matchId, predictedScore] = customId.split("_");
+    const userId = interaction.user.id;
+    const amount = parseStake(
+      interaction.fields.getTextInputValue("bet_amount")
+    );
+
+    if (amount === null) {
+      await replyEphemeral(interaction, {
+        content: `La mise minimum est de ${MIN_STAKE} Perticoin.`,
+      });
+      return;
+    }
+
+    await interaction.deferReply({ ephemeral: true });
+
+    const match = await prisma.match.findUnique({
+      where: { id: matchId },
+    });
+
+    if (!match) {
+      await replyEphemeral(interaction, { content: "Match introuvable." });
+      return;
+    }
+
+    if (!isMatchOpenForBetting(match)) {
+      await replyEphemeral(interaction, {
+        content: "Les paris sont fermés pour ce match.",
+      });
+      return;
+    }
+
+    if (!getPossibleScores(match.numberOfGames).includes(predictedScore)) {
+      await replyEphemeral(interaction, { content: "Score invalide." });
+      return;
+    }
+
+    // Odds are recomputed server-side; the value embedded in the customId is not trusted
+    const scoreOdds = await calculateScoreOdds(
+      match.opponent,
+      match.numberOfGames
+    );
+    const sessionOdds = scoreOdds[predictedScore] || 3.0;
+
+    let result;
+    try {
+      result = await placeBet(interaction, {
+        matchId,
+        type: "SCORE",
+        selection: predictedScore,
+        amount,
+        odds: sessionOdds,
+      });
+    } catch (error) {
+      if (await handlePlaceBetError(interaction, error)) return;
+      throw error;
+    }
+
+    const titleUnlocked = await runPostBetSideEffects(
+      interaction,
+      result.created
+    );
 
     const embed = new EmbedBuilder()
       .setColor(0x4caf50)
@@ -651,7 +762,7 @@ export async function handleScoreBetAmount(interaction: any) {
         },
         {
           name: "Nouveau Solde",
-          value: `${user.points - amount} Perticoin`,
+          value: `${result.newBalance} Perticoin`,
           inline: true,
         }
       )
@@ -665,24 +776,27 @@ export async function handleScoreBetAmount(interaction: any) {
       });
     }
 
-    await interaction.reply({ embeds: [embed], ephemeral: true });
+    await replyEphemeral(interaction, { embeds: [embed] });
 
-    await sendBetAnnouncement(interaction, {
-      type: "SCORE",
-      selection: predictedScore,
-      amount: amount,
-      odds: sessionOdds,
-      matchId: matchId,
-    });
+    try {
+      await sendBetAnnouncement(interaction, {
+        type: "SCORE",
+        selection: predictedScore,
+        amount: amount,
+        odds: sessionOdds,
+        matchId: matchId,
+      });
+    } catch (error) {
+      console.error("Error sending score bet announcement:", error);
+    }
 
     const sessionId = `${userId}_${matchId}`;
     activeBetSessions.delete(sessionId);
   } catch (error) {
     console.error("Error in score bet amount submission:", error);
-    await interaction.reply({
+    await replyEphemeral(interaction, {
       content:
         "Une erreur s'est produite lors du placement de votre pari sur le score.",
-      ephemeral: true,
     });
   }
 }
@@ -692,71 +806,45 @@ export async function handleBetAmount(interaction: any) {
     const customId = interaction.customId;
     const [, , matchId, team, odds] = customId.split("_");
     const userId = interaction.user.id;
-    const amount = parseInt(interaction.fields.getTextInputValue("bet_amount"));
+    const amount = parseStake(
+      interaction.fields.getTextInputValue("bet_amount")
+    );
 
-    if (isNaN(amount) || amount < 25) {
-      await interaction.reply({
-        content: "La mise minimum est de 25 Perticoin.",
-        ephemeral: true,
+    if (amount === null) {
+      await replyEphemeral(interaction, {
+        content: `La mise minimum est de ${MIN_STAKE} Perticoin.`,
       });
       return;
     }
 
-    const user = await prisma.user.findUnique({
-      where: { id: userId },
-    });
-
-    if (!user || user.points < amount) {
-      await interaction.reply({
-        content: `Fonds insuffisants. Vous avez ${
-          user?.points || 0
-        } Perticoin.`,
-        ephemeral: true,
-      });
-      return;
-    }
+    await interaction.deferReply({ ephemeral: true });
 
     const match = await prisma.match.findUnique({
       where: { id: matchId },
     });
 
     if (!match) {
-      await interaction.reply({
-        content: "Match introuvable.",
-        ephemeral: true,
+      await replyEphemeral(interaction, { content: "Match introuvable." });
+      return;
+    }
+
+    if (!isMatchOpenForBetting(match)) {
+      await replyEphemeral(interaction, {
+        content: "Les paris sont fermés pour ce match.",
       });
       return;
     }
 
-    const existingBets = await prisma.bet.findMany({
-      where: { matchId: matchId },
-    });
+    if (team !== match.kcTeam && team !== match.opponent) {
+      await replyEphemeral(interaction, { content: "Équipe invalide." });
+      return;
+    }
 
-    const kcBets = (existingBets as any[]).filter(
-      (bet: any) => bet.type === "TEAM" && bet.selection === match.kcTeam
-    );
-    const opponentBets = (existingBets as any[]).filter(
-      (bet: any) => bet.type === "TEAM" && bet.selection === match.opponent
-    );
-
-    const kcTotalAmount = kcBets.reduce((sum, bet) => sum + bet.amount, 0);
-    const opponentTotalAmount = opponentBets.reduce(
-      (sum, bet) => sum + bet.amount,
-      0
-    );
-
-    const baseOdds = await calculateBaseOddsFromHistory(match.opponent);
-    const { kcOdds, opponentOdds } = calculateDynamicOdds(
-      baseOdds.kcOdds,
-      baseOdds.opponentOdds,
-      kcTotalAmount,
-      opponentTotalAmount
-    );
-
+    const { kcOdds, opponentOdds } = await getTeamOdds(match);
     const currentOdds = team === match.kcTeam ? kcOdds : opponentOdds;
     const sessionOdds = parseFloat(odds);
 
-    if (Math.abs(currentOdds - sessionOdds) > 0.01) {
+    if (isNaN(sessionOdds) || Math.abs(currentOdds - sessionOdds) > 0.01) {
       const embed = new EmbedBuilder()
         .setColor(0xff9800)
         .setTitle("Les Cotes Ont Changé")
@@ -770,42 +858,28 @@ export async function handleBetAmount(interaction: any) {
         })
         .setTimestamp();
 
-      await interaction.reply({ embeds: [embed], ephemeral: true });
+      await replyEphemeral(interaction, { embeds: [embed] });
       return;
     }
 
-    const created = await prisma.bet.create({
-      data: {
-        guildId: interaction.guildId,
-        userId: userId,
-        matchId: matchId,
+    let result;
+    try {
+      result = await placeBet(interaction, {
+        matchId,
         type: "TEAM",
         selection: team,
-        amount: amount,
+        amount,
         odds: currentOdds,
-      } as any,
-    });
-
-    await prisma.user.update({
-      where: { id: userId },
-      data: { points: user.points - amount },
-    });
-
-    if (interaction.guildId) {
-      const tutils = new TournamentUtils(prisma);
-      await tutils.linkBetIfEligible(
-        interaction.guildId,
-        userId,
-        created.id,
-        created.createdAt
-      );
+      });
+    } catch (error) {
+      if (await handlePlaceBetError(interaction, error)) return;
+      throw error;
     }
 
-    const titleUnlocked = await TitleManager.unlockFirstBetTitle(
-      userId,
-      interaction.client
+    const titleUnlocked = await runPostBetSideEffects(
+      interaction,
+      result.created
     );
-    await TitleManager.unlockBetCountMilestone(userId, interaction.client);
 
     const embed = new EmbedBuilder()
       .setColor(0x4caf50)
@@ -821,7 +895,7 @@ export async function handleBetAmount(interaction: any) {
         },
         {
           name: "Nouveau Solde",
-          value: `${user.points - amount} Perticoin`,
+          value: `${result.newBalance} Perticoin`,
           inline: true,
         }
       )
@@ -835,23 +909,26 @@ export async function handleBetAmount(interaction: any) {
       });
     }
 
-    await interaction.reply({ embeds: [embed], ephemeral: true });
+    await replyEphemeral(interaction, { embeds: [embed] });
 
-    await sendBetAnnouncement(interaction, {
-      type: "TEAM",
-      selection: team,
-      amount: amount,
-      odds: currentOdds,
-      matchId: matchId,
-    });
+    try {
+      await sendBetAnnouncement(interaction, {
+        type: "TEAM",
+        selection: team,
+        amount: amount,
+        odds: currentOdds,
+        matchId: matchId,
+      });
+    } catch (error) {
+      console.error("Error sending bet announcement:", error);
+    }
 
     const sessionId = `${userId}_${matchId}`;
     activeBetSessions.delete(sessionId);
   } catch (error) {
     console.error("Error in bet amount submission:", error);
-    await interaction.reply({
+    await replyEphemeral(interaction, {
       content: "Une erreur s'est produite lors du placement de votre pari.",
-      ephemeral: true,
     });
   }
 }
@@ -898,16 +975,18 @@ export async function handleBackToMatches(interaction: any) {
       return;
     }
 
-    const matchOptions = await Promise.all(
-      upcomingMatches.map(async (match, index) => {
-        const userBets = await prisma.bet.findMany({
-          where: {
-            matchId: match.id,
-            userId: userId,
-          },
-        });
+    const userBets = await prisma.bet.findMany({
+      where: {
+        userId: userId,
+        matchId: { in: upcomingMatches.map((m) => m.id) },
+      },
+      select: { matchId: true },
+    });
+    const matchIdsWithBet = new Set(userBets.map((b) => b.matchId));
 
-        const hasBet = userBets.length > 0;
+    const matchOptions = await Promise.all(
+      upcomingMatches.map(async (match) => {
+        const hasBet = matchIdsWithBet.has(match.id);
         const when = formatDateTime(match.beginAt, { withTz: false });
         const description = hasBet
           ? `${match.tournamentName} - ${when} - Pari déjà placé`
@@ -980,10 +1059,9 @@ export async function handleBackToMatch(interaction: any) {
         });
 
         if (match) {
-          await handleMatchSelection({
-            ...interaction,
-            values: [match.id],
-          });
+          // Keep the real interaction instance (spreading it loses its methods)
+          interaction.values = [match.id];
+          await handleMatchSelection(interaction);
           return;
         }
       }

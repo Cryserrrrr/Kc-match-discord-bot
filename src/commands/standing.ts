@@ -5,7 +5,7 @@ import {
   StringSelectMenuBuilder,
   StringSelectMenuOptionBuilder,
 } from "discord.js";
-import { prisma } from "../index";
+import { prisma } from "../db";
 import { logger } from "../utils/logger";
 import { CONFIG, ERROR_MESSAGES } from "../utils/config";
 import { withTimeout } from "../utils/timeoutUtils";

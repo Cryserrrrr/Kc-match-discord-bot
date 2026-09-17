@@ -9,13 +9,16 @@ export function withTimeout<T>(
   timeoutMs: number,
   errorMessage: string
 ): Promise<T> {
+  let timer: NodeJS.Timeout | undefined;
   const timeoutPromise = new Promise<never>((_, reject) => {
-    setTimeout(() => {
+    timer = setTimeout(() => {
       reject(new Error(errorMessage));
     }, timeoutMs);
   });
 
-  return Promise.race([promise, timeoutPromise]);
+  return Promise.race([promise, timeoutPromise]).finally(() => {
+    if (timer) clearTimeout(timer);
+  });
 }
 
 /**

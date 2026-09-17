@@ -10,7 +10,6 @@ import {
 import { StatsManager } from "../utils/statsManager";
 import { logger } from "../utils/logger";
 import { handleInteractionError } from "../utils/retryUtils";
-import { client } from "../index";
 
 export const data = new SlashCommandBuilder()
   .setName("ticket")
@@ -96,6 +95,9 @@ export async function execute(interaction: CommandInteraction) {
 
 export async function handleTicketModalSubmit(interaction: any) {
   try {
+    // Acknowledge within Discord's 3s window before any DB/DM work
+    await interaction.deferReply({ flags: 64 });
+
     const ticketType = interaction.customId.split("_")[2] as
       | "BUG"
       | "IMPROVEMENT";
@@ -120,19 +122,7 @@ export async function handleTicketModalSubmit(interaction: any) {
     const adminUserIds = process.env.DISCORD_USER_ID?.split(",").map((id) => id.trim()).filter(Boolean) || [];
     if (adminUserIds.length > 0) {
       try {
-        if (!client.isReady()) {
-          await new Promise<void>((resolve, reject) => {
-            const timeout = setTimeout(() => {
-              reject(new Error("Client ready timeout"));
-            }, 5000);
-
-            client.once("ready", () => {
-              clearTimeout(timeout);
-              resolve();
-            });
-          });
-        }
-
+        const client = interaction.client;
         const adminEmbed = new EmbedBuilder()
           .setColor(ticketType === "BUG" ? "#ff6b6b" : "#4ecdc4")
           .setTitle(`🎫 Nouveau ticket créé`)
@@ -169,18 +159,23 @@ export async function handleTicketModalSubmit(interaction: any) {
           .setTimestamp()
           .setFooter({ text: `Ticket créé par ${username}` });
 
-        for (const adminUserId of adminUserIds) {
-          try {
-            const adminUser = await client.users.fetch(adminUserId);
-            await adminUser.send({ embeds: [adminEmbed] });
-            logger.info(`Sent ticket notification to admin user ${adminUserId}`);
-          } catch (adminDmError) {
-            logger.error(
-              `Could not send DM to admin user ${adminUserId}:`,
-              adminDmError
-            );
+        // Fire-and-forget: admin DMs must not delay the user's response
+        void (async () => {
+          for (const adminUserId of adminUserIds) {
+            try {
+              const adminUser = await client.users.fetch(adminUserId);
+              await adminUser.send({ embeds: [adminEmbed] });
+              logger.info(
+                `Sent ticket notification to admin user ${adminUserId}`
+              );
+            } catch (adminDmError) {
+              logger.error(
+                `Could not send DM to admin user ${adminUserId}:`,
+                adminDmError
+              );
+            }
           }
-        }
+        })();
       } catch (error) {
         logger.error("Error sending ticket notifications to admins:", error);
       }
@@ -220,25 +215,29 @@ export async function handleTicketModalSubmit(interaction: any) {
         embeds: [embed],
       });
 
-      await interaction.reply({
+      await interaction.editReply({
         content:
           "✅ Votre ticket a été créé avec succès ! Une confirmation vous a été envoyée en message privé.",
-        flags: 64,
       });
     } catch (dmError) {
       logger.warn(`Could not send DM to user ${userId}:`, dmError);
 
-      await interaction.reply({
+      await interaction.editReply({
         embeds: [embed],
-        flags: 64,
       });
     }
   } catch (error) {
     logger.error("Error handling ticket modal submit:", error);
-    await interaction.reply({
+    const errorResponse = {
       content:
         "❌ Une erreur s'est produite lors de la création du ticket. Veuillez réessayer.",
-      flags: 64,
-    });
+    };
+    try {
+      if (interaction.deferred || interaction.replied) {
+        await interaction.editReply(errorResponse);
+      } else {
+        await interaction.reply({ ...errorResponse, flags: 64 });
+      }
+    } catch {}
   }
 }

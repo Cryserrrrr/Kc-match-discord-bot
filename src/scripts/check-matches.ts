@@ -163,7 +163,7 @@ async function main() {
         `📅 Found ${matches.length} matches for the next 24 hours in database`
       );
 
-      const hasAnnouncements = await withRetry(async () => {
+      const guildsWithoutMatches = await withRetry(async () => {
         if (!client || !prisma) throw new Error("Clients not initialized");
         const guildSettings = await prisma.guildSettings.findMany();
         return await sendDailyMatchAnnouncementWithReset(
@@ -174,17 +174,18 @@ async function main() {
         );
       });
 
-      if (!hasAnnouncements) {
+      // Guilds whose team filter excludes all of today's matches still get
+      // the "no match today" message
+      if (guildsWithoutMatches.length > 0) {
         logger.info(
-          "📭 No guilds received match announcements - sending no matches message"
+          `📭 ${guildsWithoutMatches.length} guild(s) have no match in their filter - sending no matches message`
         );
         await withRetry(async () => {
           if (!client || !prisma) throw new Error("Clients not initialized");
-          const guildSettings = await prisma.guildSettings.findMany();
           await sendNoMatchesAnnouncementWithNextMatch(
             client,
             prisma,
-            guildSettings
+            guildsWithoutMatches
           );
         });
       }
@@ -222,6 +223,9 @@ async function getMatchesNext24Hours(prisma: PrismaClient) {
         beginAt: {
           gte: dateMinusOne,
           lte: tomorrow,
+        },
+        status: {
+          not: "canceled",
         },
       },
       orderBy: {
@@ -348,15 +352,15 @@ async function sendDailyMatchAnnouncementWithReset(
   prisma: PrismaClient,
   guildSettings: any[],
   matches: any[]
-): Promise<boolean> {
+): Promise<any[]> {
   const { getMatchRolesToPing } = await import("../utils/guildFilters");
 
   try {
     if (guildSettings.length === 0) {
-      return false;
+      return [];
     }
 
-    let hasSuccessfulAnnouncements = false;
+    const guildsWithoutMatches: any[] = [];
 
     for (let i = 0; i < guildSettings.length; i++) {
       const settings = guildSettings[i];
@@ -382,6 +386,7 @@ async function sendDailyMatchAnnouncementWithReset(
         }
 
         if (filteredMatches.length === 0) {
+          guildsWithoutMatches.push(settings);
           continue;
         }
 
@@ -431,8 +436,6 @@ async function sendDailyMatchAnnouncementWithReset(
           }
         }
 
-        hasSuccessfulAnnouncements = true;
-
         if (i < guildSettings.length - 1) {
           await new Promise((resolve) => setTimeout(resolve, 500));
         }
@@ -444,7 +447,7 @@ async function sendDailyMatchAnnouncementWithReset(
       }
     }
 
-    return hasSuccessfulAnnouncements;
+    return guildsWithoutMatches;
   } catch (error) {
     logger.error("Error announcing matches:", error);
     throw error;
