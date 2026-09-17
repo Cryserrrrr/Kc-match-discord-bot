@@ -3,7 +3,7 @@ import { prisma } from "../db";
 import { logger } from "./logger";
 
 const CHECK_INTERVAL_MS = 2 * 60 * 1000;
-// Discord error codes that will never succeed on retry (DMs closed, unknown user)
+// DMs closed (50007) or unknown user (10013): the notification is cancelled, never retried
 const PERMANENT_DM_ERRORS = new Set([50007, 10013]);
 
 const STATUS_TEXT: Record<string, string> = {
@@ -87,7 +87,7 @@ export async function notifyTicketAnswers(client: Client) {
         continue;
       }
       logger.warn(
-        `User ${ticket.userId} cannot receive DMs, skipping ticket ${ticket.id}`
+        `User ${ticket.userId} has DMs closed, answer notification cancelled for ticket ${ticket.id}`
       );
     }
 

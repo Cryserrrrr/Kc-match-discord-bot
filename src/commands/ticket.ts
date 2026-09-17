@@ -30,7 +30,7 @@ export const data = (
   option
     .setName("notification")
     .setDescription(
-      "Recevoir un message privé quand le support répond (oui par défaut)"
+      "MP quand le support répond (oui par défaut). Vos MP doivent être ouverts."
     )
     .setRequired(false)
 );
@@ -215,7 +215,7 @@ export async function handleTicketModalSubmit(interaction: any) {
         {
           name: "Notification",
           value: notifyOnAnswer
-            ? "🔔 Vous recevrez un message privé dès que le support répondra"
+            ? "🔔 Vous recevrez un message privé dès que le support répondra.\n⚠️ Si vos messages privés sont fermés, le bot ne pourra pas vous l'envoyer et la notification sera annulée."
             : "🔕 Pas de message privé à la réponse (voir `/mytickets`)",
         },
         {
@@ -242,6 +242,9 @@ export async function handleTicketModalSubmit(interaction: any) {
       logger.warn(`Could not send DM to user ${userId}:`, dmError);
 
       await interaction.editReply({
+        content: notifyOnAnswer
+          ? "⚠️ Vos messages privés semblent fermés : ouvrez-les pour recevoir la réponse du support, sinon la notification sera annulée."
+          : undefined,
         embeds: [embed],
       });
     }
