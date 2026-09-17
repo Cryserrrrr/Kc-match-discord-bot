@@ -8,16 +8,21 @@ const casters: Caster[] = [
   {
     name: "Kameto",
     twitchLink: "https://www.twitch.tv/kamet0",
-    leagues: ["LEC", "LFL", "VCT"],
+    leagues: ["LEC", "VCT"],
   },
   {
     name: "Slipix",
     twitchLink: "https://www.twitch.tv/slipix",
-    leagues: ["LFL Division 2"],
+    leagues: ["LFL"],
   },
   {
-    name: "Fugu",
-    twitchLink: "https://www.twitch.tv/fugu_fps",
+    name: "Bibou",
+    twitchLink: "https://www.twitch.tv/bibou_lol",
+    leagues: ["LFL Division 2", "Nexus League"],
+  },
+  {
+    name: "Fatih",
+    twitchLink: "https://www.twitch.tv/fatiiiih",
     leagues: ["VCL"],
   },
   {
@@ -37,7 +42,19 @@ const casters: Caster[] = [
   },
 ];
 
-const ROCKET_LEAGUE_TEAM_ID = "129570";
+// Biggest league of each game: its caster is used when a league has no caster
+const MAIN_LEAGUE_BY_TEAM_ID: Record<string, string> = {
+  // League of Legends: KC, KCB, KCBS
+  "134078": "LEC",
+  "128268": "LEC",
+  "136080": "LEC",
+  // Valorant: KC, KCGC, KCBS
+  "130922": "VCT",
+  "132777": "VCT",
+  "136165": "VCT",
+  // Rocket League
+  "129570": "RLCS",
+};
 
 function escapeRegExp(text: string): string {
   return text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -63,15 +80,23 @@ export function getCasterForLeague(
   }
   if (best) return best.caster;
 
-  // Unknown league name for the Rocket League roster: fall back to its caster
-  if (kcId === ROCKET_LEAGUE_TEAM_ID) {
-    return casters.find((c) => c.leagues.includes("RL")) || null;
+  // No caster for this league: use the caster of the game's biggest league
+  const mainLeague = kcId ? MAIN_LEAGUE_BY_TEAM_ID[kcId] : undefined;
+  if (mainLeague) {
+    return (
+      casters.find((c) =>
+        c.leagues.some((l) => l.toLowerCase() === mainLeague.toLowerCase())
+      ) || null
+    );
   }
   return null;
 }
 
-export function getStreamingUrl(leagueName: string): string | null {
-  const caster = getCasterForLeague(leagueName);
+export function getStreamingUrl(
+  leagueName: string,
+  kcId?: string
+): string | null {
+  const caster = getCasterForLeague(leagueName, kcId);
   return caster ? caster.twitchLink : null;
 }
 export { casters };

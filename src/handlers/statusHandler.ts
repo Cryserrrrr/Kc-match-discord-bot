@@ -15,7 +15,7 @@ export class StatusHandler {
 
       if (liveMatch) {
         const statusText = `${liveMatch.kcTeam} vs ${liveMatch.opponent}`;
-        const streamingUrl = getStreamingUrl(liveMatch.leagueName);
+        const streamingUrl = getStreamingUrl(liveMatch.leagueName, liveMatch.kcId);
 
         if (streamingUrl) {
           this.client.user?.setActivity(statusText, {
