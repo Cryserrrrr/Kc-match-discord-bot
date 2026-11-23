@@ -46,8 +46,14 @@ const PLAYERS: PlayerData[] = [
     teamName: TEAM_NAMES[TEAM_IDS.LOL.KC as keyof typeof TEAM_NAMES],
   },
   {
-    twitchLogin: "yikelol",
-    playerName: "Yike",
+    twitchLogin: "skewmond_lol",
+    playerName: "Skewmond",
+    teamId: TEAM_IDS.LOL.KC,
+    teamName: TEAM_NAMES[TEAM_IDS.LOL.KC as keyof typeof TEAM_NAMES],
+  },
+  {
+    twitchLogin: "kyeahoo0813",
+    playerName: "Kyeahoo",
     teamId: TEAM_IDS.LOL.KC,
     teamName: TEAM_NAMES[TEAM_IDS.LOL.KC as keyof typeof TEAM_NAMES],
   },
